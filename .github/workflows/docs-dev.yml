@@ -1,0 +1,51 @@
+# The documentation as main has it, published under `dev`.
+#
+# Releases publish their own version and own the `latest` alias; see
+# on-release-main.yml. The two share a concurrency group so one mike push to
+# gh-pages never lands on top of another.
+#
+# GitHub Pages must serve from the gh-pages branch
+# (Settings > Pages > Source: Deploy from a branch > gh-pages / root).
+name: docs-dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy-dev-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # mike pushes to gh-pages
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # mike reads and rewrites the gh-pages branch
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Deploy the dev documentation
+        run: uv run mike deploy --push --alias-type=copy dev
+
+      # Until a release exists there is no `latest`, and a site whose default
+      # points at a version nobody published serves a 404 at its root. The
+      # release workflow sets the default to `latest` when it publishes one,
+      # and this never takes it back.
+      - name: Point the site at dev until a release owns latest
+        run: |
+          if uv run mike list 2>/dev/null | grep -q 'latest'; then
+            echo "A release owns the latest alias; leaving the default alone." >> "$GITHUB_STEP_SUMMARY"
+          else
+            uv run mike set-default --push dev
+          fi
