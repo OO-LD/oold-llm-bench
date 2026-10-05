@@ -8,6 +8,8 @@ reaches a record and a report without a provider.
 
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 
 from oold_llm_bench.corpus.quantities import Notation, QuantityKind, generate_task
@@ -21,6 +23,17 @@ KINDS = [
     QuantityKind(name="Length", units=("meter", "kilo_meter")),
     QuantityKind(name="Mass", units=("gram", "kilo_gram")),
 ]
+needs_agent = pytest.mark.skipif(
+    importlib.util.find_spec("oold") is None,
+    reason="running a grid builds agents from the library, which is the `agent` extra",
+)
+"""Marks a test that runs a grid rather than only declaring one.
+
+Declaring and reading a grid needs nothing but the core, which is the point
+of the extra being optional. Running one reaches preflight, and preflight
+builds control agents from the library like any other cell.
+"""
+
 MODEL = "gpt-5-nano"
 """A real catalogue entry, because a spec is built before any call is made.
 No call is made here: the agent is injected."""
@@ -114,6 +127,7 @@ class PerfectAgent:
         ]
 
 
+@needs_agent
 def test_a_grid_whose_corpus_spells_its_answers_is_refused(tmp_path):
     """Preflight is consulted before a cell is billed, not after.
 
@@ -135,6 +149,7 @@ def test_a_grid_whose_corpus_spells_its_answers_is_refused(tmp_path):
         run_grid(grid, [MODEL], out=tmp_path, agents=lambda spec: PerfectAgent())
 
 
+@needs_agent
 def test_a_grid_runs_to_a_record_and_a_report(tmp_path):
     """The claim the whole package exists for: a declaration reaches a record.
 

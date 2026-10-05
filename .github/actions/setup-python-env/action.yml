@@ -25,5 +25,8 @@ runs:
         cache-suffix: ${{ matrix.python-version }}
 
     - name: Install Python dependencies
-      run: uv sync --frozen
+      # Every extra, because the agent, the providers and the playground each
+      # carry tests. Syncing the core alone would let those collect as skips
+      # and report a green run that checked none of them.
+      run: uv sync --frozen --all-extras
       shell: bash

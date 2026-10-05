@@ -49,9 +49,15 @@ class TestTheLadder:
         assert all(e.model_version for e in LADDER)
 
     def test_every_entry_declares_a_provider_profile(self):
-        from oold.agent.provider import PROFILES
+        """The profiles are the library's, so this one needs the extra.
 
-        assert all(e.provider_profile in PROFILES for e in LADDER)
+        The catalogue itself does not: reading which model was run, on what
+        transport, at which version is part of reading a published record.
+        """
+        import pytest
+
+        profiles = pytest.importorskip("oold.agent.provider").PROFILES
+        assert all(e.provider_profile in profiles for e in LADDER)
 
     def test_the_ladder_spans_more_than_one_size(self):
         """H3 asks whether constraint helps most where the model is weakest."""

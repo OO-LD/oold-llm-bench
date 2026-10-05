@@ -9,9 +9,14 @@ and that a cut says how much it cut.
 from __future__ import annotations
 
 import pytest
-from oold.agent.client import Message
 
 from oold_llm_bench.chains import Chain, Exchange, Recorder, chain_of, excerpt, render
+
+# The recorder implements the library's client protocol, so the real message
+# type is what a test should hand it. The library is an extra, and a module
+# that cannot be collected without it would make a core-only run report an
+# error where it should report a skip.
+Message = pytest.importorskip("oold.agent.client").Message
 
 
 class FakeResponse:

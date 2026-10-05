@@ -54,8 +54,10 @@ def run_grid(
     from oold_llm_bench.results import ResultStore
     from oold_llm_bench.results.record import Environment
     from oold_llm_bench.runner import ExperimentConfig, agent_factory, build_request, run_experiment
+    from oold_llm_bench.runner.arms import register_union_arms
     from oold_llm_bench.runner.preflight import preflight
 
+    register_union_arms()
     grid = grid.select(rungs)
     directory = resolve_module(QUANTITIES, schemas) if grid.needs_schemas else None
     tasks = grid.tasks(per_class if per_class is not None else grid.per_class, directory)

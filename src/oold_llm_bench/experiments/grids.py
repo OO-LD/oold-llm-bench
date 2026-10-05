@@ -18,14 +18,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from oold_llm_bench.runner import Condition
-from oold_llm_bench.runner.arms import UNION_BLIND_ARM, UNION_ENFORCED_ARM, register_union_arms
+from oold_llm_bench.runner.arms import UNION_BLIND_ARM, UNION_ENFORCED_ARM
 
 if TYPE_CHECKING:
     from oold_llm_bench.tasks.models import TaskRecord
 
 __all__ = ["GRIDS", "Grid"]
 
-register_union_arms()
+# The arm names below are strings and need no registry to be declared. The
+# registry is the library's, so registering here would make importing a grid
+# require the agent extra, which the grader and the corpus deliberately do
+# not. `run_grid` registers before it builds an agent.
 
 _LADDER_CLASSES = ("Altitude", "Area", "Length", "Diameter")
 """Four kinds, held across every rung.
