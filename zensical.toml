@@ -1,0 +1,36 @@
+[project]
+site_name = "oold-llm-bench"
+repo_url = "https://github.com/OO-LD/oold-llm-bench"
+site_url = "https://OO-LD.github.io/oold-llm-bench/"
+site_description = "Hypothesis-driven benchmark for schema-constrained LLM extraction"
+edit_uri = "edit/main/docs/"
+repo_name = "OO-LD/oold-llm-bench"
+
+nav = [
+    { "Home" = "index.md" },
+    { "Findings" = "findings.md" },
+    { "Method" = "method.md" },
+    { "Pipelines" = [
+        { "Overview" = "pipelines/index.md" },
+        { "Single shot" = "pipelines/single_shot.md" },
+        { "Select then fill" = "pipelines/select_then_fill.md" },
+        { "Segmented" = "pipelines/segmented.md" },
+        { "Multi step" = "pipelines/multi_step.md" },
+    ] },
+    { "Two arms on one document" = "arms.md" },
+    { "Corpora" = "corpora.md" },
+    { "Results" = "results.md" },
+    { "Running" = [
+        { "Local stack" = "local-stack.md" },
+        { "HF endpoints" = "hf-endpoints.md" },
+    ] },
+]
+
+[project.theme]
+language = "en"
+features = ["content.code.copy", "navigation.footer", "search.highlight"]
+
+[project.markdown_extensions.pymdownx.superfences]
+
+[project.markdown_extensions.toc]
+permalink = true

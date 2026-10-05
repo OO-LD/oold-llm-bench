@@ -1,0 +1,166 @@
+[project]
+name = "oold-llm-bench"
+description = "Hypothesis-driven benchmark for schema-constrained LLM extraction"
+authors = [{ name = "OO-LD" }]
+readme = "README.md"
+keywords = ["python"]
+requires-python = ">=3.10,<4.0"
+# Version is managed by python-semantic-release (see [tool.semantic_release]).
+# Do not edit by hand; it is bumped automatically on merge to main.
+version = "0.1.0"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    # Task records and triples are validated data, not dicts. Nothing else is
+    # a core dependency: LLM clients, corpora and plotting sit behind extras
+    # so an arm that depends on nothing can still be run.
+    "pydantic>=2.0.0",
+    # Quantities are compared physically, so 1.0 m and 100 cm are one answer
+    # and a unit error is a separate finding from a magnitude error. Scoring
+    # them as strings would mark a correct conversion wrong.
+    "pint>=0.24",
+]
+
+[project.optional-dependencies]
+# The agent skeleton, which is what an arm actually runs. Kept optional so the
+# grader, the corpus and the controls stay usable on their own: a third party
+# rescoring published records needs none of this.
+# Pinned to a revision rather than a released version: the arm registry and
+# the enforcement fields this benchmark varies live in the library, so a
+# result is only placeable if it names the library commit it was measured
+# against. A published run that said ">=1.0.3" would not.
+agent = [
+    "oold[agent] @ git+https://github.com/OO-LD/oold-python.git@71494a99f354b8c1f6771e7a76a4e1feeb5a1b67",
+]
+# Fetching a schema corpus. Not a core dependency, because rescoring published
+# records needs the grader and nothing else.
+corpora = ["huggingface-hub>=0.26"]
+# One LangChain integration per transport the deployed models answer on.
+# Which model takes which is recorded in the catalogue, not guessed at call
+# time, so adding a provider means adding an entry and not a code path.
+providers = [
+    "langchain-openai>=0.3",
+    "langchain-anthropic>=0.3",
+    "langchain-mistralai>=0.2",
+]
+# The interactive playground: a graph of one answer, with what the benchmark
+# measured beside it. A user interface is not a benchmark dependency, so this
+# is an extra and `make ci` never installs it. It pulls the agent and the
+# providers with it, because a playground that cannot call anything is a form
+# with no submit button.
+playground = [
+    "oold-llm-bench[agent,providers]",
+    "panel>=1.5",
+    "panelini>=1.0.1",
+    # Drives the interface for the end-to-end test. Opt-in with the rest of
+    # the extra rather than in a dev group: nothing in CI runs it, and a
+    # contributor who wants it wants the interface too.
+    "pytest-playwright>=0.7",
+]
+
+[project.scripts]
+# A grid that lives in a scratch script is a grid nobody else can run.
+oold-bench = "oold_llm_bench.cli:main"
+
+[project.urls]
+Homepage = "https://OO-LD.github.io/oold-llm-bench/"
+Documentation = "https://OO-LD.github.io/oold-llm-bench/"
+Repository = "https://github.com/OO-LD/oold-llm-bench"
+
+[dependency-groups]
+dev = [
+    "deptry>=0.25.0",
+    "mike @ git+https://github.com/squidfunk/mike.git@2.2.0+zensical-0.1.0",
+    "pre-commit>=4.0.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+    "python-semantic-release>=10.0.0",
+    # scripts/build_quantity_signals.py reads the QUDT vocabulary. Not a runtime
+    # dependency: its output is committed, so a benchmark run needs no network.
+    "rdflib>=7.0",
+    "ty>=0.0.1a21",
+    "zensical>=0.0.46",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oold_llm_bench"]
+
+[tool.hatch.metadata]
+# The agent extra names a git revision, because a result is only placeable if
+# it says which library commit produced it.
+allow-direct-references = true
+
+[tool.semantic_release]
+commit_parser = "conventional"
+tag_format = "v{version}"
+commit_message = "chore(release): v{version} [skip ci]"
+allow_zero_version = true
+build_command = "uv lock"
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["CITATION.cff:version"]
+exclude_commit_patterns = ['''chore\(release\):.*''']
+assets = ["uv.lock"]
+
+[tool.semantic_release.changelog]
+mode = "update"
+insertion_flag = "<!-- version list -->"
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `ui` is deselected here rather than only skipped inside the test, so a run
+# that has the playground extra installed still does not start a browser or
+# reach a provider unless it was asked to: `pytest -m ui`.
+addopts = "--cov --cov-config=pyproject.toml --cov-report=term-missing -m 'not ui'"
+markers = [
+    "ui: drives the playground in a browser; needs the playground extra and a schema collection",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+skip_empty = true
+
+[[tool.ty.overrides]]
+# The interface is the one module that imports the playground extra, and the
+# extra is not installed for a check: `make ci` has to stay green without it.
+# Scoped to this file so an unresolved import anywhere else still fails.
+include = ["src/oold_llm_bench/playground/app.py"]
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+
+[tool.deptry]
+[tool.deptry.per_rule_ignores]
+# Neither is imported under src/, and neither is unused. The self-reference is
+# how the playground extra pulls the agent and the providers with it, and
+# pytest-playwright is a plugin the end-to-end test needs and no module names.
+DEP002 = ["oold-llm-bench", "pytest-playwright"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = [
+    "YTT", "S", "B", "A", "C4", "T10", "SIM", "I", "C90", "E", "W", "F",
+    "PGH", "UP", "RUF", "TRY",
+]
+ignore = ["E501", "E731", "TRY003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.ruff.format]
+preview = true

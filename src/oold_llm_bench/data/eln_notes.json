@@ -1,0 +1,229 @@
+{
+  "source": "hand-authored",
+  "written": "2026-09-27",
+  "note": "Laboratory notes written by hand, in the registers a notebook actually uses. Not generated from a template, and not written by a person doing the experiment either, so it is a register check and not a corpus. The quantity kinds are QUDT names and the units are QUDT unit names, so the grader scores these the same way it scores the synthetic set.",
+  "notes": [
+    {
+      "id": "eln-01",
+      "text": "Ran the column again after lunch. Back pressure sat at 118 bar the whole time, which is higher than Tuesday but still inside spec.",
+      "expected": [
+        {
+          "class": "Pressure",
+          "value": 118.0,
+          "unit": "bar"
+        }
+      ]
+    },
+    {
+      "id": "eln-02",
+      "text": "Weighed out the standard: 24.6 mg. Dissolved in the usual buffer, no issues.",
+      "expected": [
+        {
+          "class": "Mass",
+          "value": 24.6,
+          "unit": "milli_gram"
+        }
+      ]
+    },
+    {
+      "id": "eln-03",
+      "text": "Oven never reached setpoint. Logged 412 K at the thermocouple after forty minutes and I gave up waiting.",
+      "expected": [
+        {
+          "class": "ThermodynamicTemperature",
+          "value": 412.0,
+          "unit": "kelvin"
+        }
+      ]
+    },
+    {
+      "id": "eln-04",
+      "text": "Sample 7b. Conductivity 3.4 mS/cm, measured twice, second reading agreed to the first decimal.",
+      "expected": [
+        {
+          "class": "ElectrolyticConductivity",
+          "value": 3.4,
+          "unit": "milli_siemens_per_centi_meter"
+        }
+      ]
+    },
+    {
+      "id": "eln-05",
+      "text": "NB: the flow meter is reading low again. 0.85 mL/min on the display against 1.0 set. Service ticket raised.",
+      "expected": [
+        {
+          "class": "VolumeFlowRate",
+          "value": 0.85,
+          "unit": "milli_liter_per_minute"
+        }
+      ]
+    },
+    {
+      "id": "eln-06",
+      "text": "Film thickness came out at 240 nm by ellipsometry. Thinner than the last batch, probably the spin speed.",
+      "expected": [
+        {
+          "class": "Thickness",
+          "value": 240.0,
+          "unit": "nano_meter"
+        }
+      ]
+    },
+    {
+      "id": "eln-07",
+      "text": "Left the reaction stirring overnight, about 16 h in total, then quenched.",
+      "expected": [
+        {
+          "class": "Time",
+          "value": 16.0,
+          "unit": "hour"
+        }
+      ]
+    },
+    {
+      "id": "eln-08",
+      "text": "Titration endpoint at 12.35 mL. Repeat tomorrow with the fresh titrant, this bottle is three months old.",
+      "expected": [
+        {
+          "class": "Volume",
+          "value": 12.35,
+          "unit": "milli_liter"
+        }
+      ]
+    },
+    {
+      "id": "eln-09",
+      "text": "Cell voltage held at 1.23 V for the duration. No drift worth noting.",
+      "expected": [
+        {
+          "class": "Voltage",
+          "value": 1.23,
+          "unit": "volt"
+        }
+      ]
+    },
+    {
+      "id": "eln-10",
+      "text": "Density measured 1.045 g/cm3 at room temperature. Matches the supplier sheet within rounding.",
+      "expected": [
+        {
+          "class": "Density",
+          "value": 1.045,
+          "unit": "gram_per_centi_meter_cubed"
+        }
+      ]
+    },
+    {
+      "id": "eln-11",
+      "text": "Second attempt. Applied 45 N and the joint held, which it did not at 40 N yesterday.",
+      "expected": [
+        {
+          "class": "Force",
+          "value": 45.0,
+          "unit": "newton"
+        }
+      ]
+    },
+    {
+      "id": "eln-12",
+      "text": "pH meter calibrated first thing. Sample read 7.4, buffer read 7.0 as expected.",
+      "expected": [
+        {
+          "class": "Volume",
+          "value": 7.4,
+          "unit": "unitless"
+        }
+      ],
+      "skip": "pH is not a QUDT quantity kind with a unit enumeration, so this one is kept as a case the corpus cannot score and must not be counted. The expected block names Volume and is an authoring error left in place, because the loader refuses a skip marker on a note that resolves and this one has to keep failing to resolve for that check to mean anything."
+    },
+    {
+      "id": "eln-13",
+      "text": "Heating rate set to 5 K/min for the whole ramp. Trace looks clean.",
+      "expected": [
+        {
+          "class": "TemperatureRateOfChange",
+          "value": 5.0,
+          "unit": "kelvin_per_minute"
+        }
+      ]
+    },
+    {
+      "id": "eln-14",
+      "text": "Grabbed a quick reading before packing up: 96.2 kPa on the barometer.",
+      "expected": [
+        {
+          "class": "Pressure",
+          "value": 96.2,
+          "unit": "kilo_pascal"
+        }
+      ]
+    },
+    {
+      "id": "eln-15",
+      "text": "Yield 0.82 g from the second crop. Combined with the first that is most of the theoretical.",
+      "expected": [
+        {
+          "class": "Mass",
+          "value": 0.82,
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "id": "eln-16",
+      "text": "Wavelength scan: peak at 532 nm, sharp, no shoulder this time.",
+      "expected": [
+        {
+          "class": "Wavelength",
+          "value": 532.0,
+          "unit": "nano_meter"
+        }
+      ]
+    },
+    {
+      "id": "eln-17",
+      "text": "Ambient was 21 degC and 44 percent humidity when I started. Noting it because the last run drifted.",
+      "expected": [
+        {
+          "class": "CelsiusTemperature",
+          "value": 21.0,
+          "unit": "degree_Celsius"
+        }
+      ]
+    },
+    {
+      "id": "eln-18",
+      "text": "Ran at 12000 rpm for ten minutes. Pellet was firm.",
+      "expected": [
+        {
+          "class": "AngularVelocity",
+          "value": 12000.0,
+          "unit": "revolutions_per_minute"
+        }
+      ],
+      "skip": "AngularVelocity admits only radian per second, hour and minute, so there is no identifier for rpm to resolve to and no arm could emit the expected unit. Checked before re-annotating: RotationalFrequency admits per_minute, but so does RotationalVelocity, and both are in the catalogue. Re-annotating to either would swap a note no model can answer for one where two answers are defensible and one is marked wrong, so it stays out."
+    },
+    {
+      "id": "eln-19",
+      "text": "Resistance across the contacts 4.7 ohm. Same as before the anneal, so the anneal did nothing.",
+      "expected": [
+        {
+          "class": "Resistance",
+          "value": 4.7,
+          "unit": "ohm"
+        }
+      ]
+    },
+    {
+      "id": "eln-20",
+      "text": "Energy input logged as 2.4 kJ over the pulse train. Detector saturated near the end so treat with care.",
+      "expected": [
+        {
+          "class": "Energy",
+          "value": 2.4,
+          "unit": "kilo_joule"
+        }
+      ]
+    }
+  ]
+}

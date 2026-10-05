@@ -1,0 +1,16 @@
+# Managed by copier / make init; refreshed on every update. Do not edit.
+_commit: v0.12.0
+_src_path: https://github.com/OO-LD/coregraft
+benchmarks: 'false'
+citation: 'true'
+codecov: 'false'
+description: Hypothesis-driven benchmark for schema-constrained LLM extraction
+devcontainer: 'false'
+dockerfile: 'false'
+license: apache-2.0
+owner: OO-LD
+package_name: oold_llm_bench
+profile: python
+project_name: oold-llm-bench
+pypi_publish: 'false'
+update_bot: 'false'

@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+title: oold-llm-bench
+message: If you use this software, please cite it as below.
+type: software
+# Authors are curated by hand rather than generated from the contributor list,
+# so nobody is credited without consent. This list becomes the creator list of
+# every Zenodo release.
+authors:
+  - name: OO-LD
+repository-code: https://github.com/OO-LD/oold-llm-bench
+# Managed by python-semantic-release (version_variables in pyproject.toml).
+# Do not edit by hand; it is bumped automatically on merge to main, and is
+# what Zenodo shows as the version of each archived release.
+version: 0.1.0
