@@ -31,7 +31,7 @@ import json
 import os
 from collections import Counter, OrderedDict
 from collections.abc import Iterable, Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -395,7 +395,7 @@ def main() -> None:
     parser.add_argument("--p460-draw", type=Path, required=True)
     parser.add_argument("--p460-states", type=Path, required=True)
     parser.add_argument("--judgements", type=Path, default=None, help="the hand-checked kill-test verdicts, tsv")
-    parser.add_argument("--retrieved-at", default=datetime.now(timezone.utc).date().isoformat())
+    parser.add_argument("--retrieved-at", default=datetime.now(UTC).date().isoformat())
     parser.add_argument("--cap", type=int, default=90, help="pairs kept per class, 0 for all")
     parser.add_argument("--out", type=Path, default=Path("src/oold_llm_bench/data/wikidata_identity.json"))
     args = parser.parse_args()
@@ -470,7 +470,7 @@ def main() -> None:
             ),
         },
         "wikidata_base": "http://www.wikidata.org/entity/",
-        "built_at": datetime.now(timezone.utc).date().isoformat(),
+        "built_at": datetime.now(UTC).date().isoformat(),
         "min_statements": MIN_STATEMENTS,
         "earliest_merge_year": EARLIEST_MERGE_YEAR,
         "stripped_properties": list(TRUTH_PROPERTIES),

@@ -19,7 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 QUDT_VERSION = "3.1.5"
@@ -146,7 +146,7 @@ def build(out: Path) -> dict:
         "qudt_version": QUDT_VERSION,
         "emmo_version": EMMO_VERSION,
         "emmo_commit": EMMO_COMMIT,
-        "built_at": datetime.now(timezone.utc).date().isoformat(),
+        "built_at": datetime.now(UTC).date().isoformat(),
         "languages": list(WANTED_LANGUAGES),
         "note": (
             "English labels and any text containing the class name are "

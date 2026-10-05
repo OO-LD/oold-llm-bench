@@ -128,7 +128,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -372,7 +372,7 @@ class IdentityCorpus:
     @property
     def retrieved_at(self) -> datetime:
         stamp = str(self.source.get("retrieved_at") or self.built_at)
-        return datetime.combine(date.fromisoformat(stamp), datetime.min.time(), tzinfo=timezone.utc)
+        return datetime.combine(date.fromisoformat(stamp), datetime.min.time(), tzinfo=UTC)
 
     def of(self, identity: IdentityClass) -> tuple[Pair, ...]:
         return tuple(pair for pair in self.pairs if pair.identity is identity)

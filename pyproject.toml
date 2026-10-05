@@ -4,7 +4,7 @@ description = "Hypothesis-driven benchmark for schema-constrained LLM extraction
 authors = [{ name = "OO-LD" }]
 readme = "README.md"
 keywords = ["python"]
-requires-python = ">=3.10,<4.0"
+requires-python = ">=3.11,<4.0"
 # Version is managed by python-semantic-release (see [tool.semantic_release]).
 # Do not edit by hand; it is bumped automatically on merge to main.
 version = "0.1.0"
@@ -21,7 +21,13 @@ dependencies = [
     # Quantities are compared physically, so 1.0 m and 100 cm are one answer
     # and a unit error is a separate finding from a magnitude error. Scoring
     # them as strings would mark a correct conversion wrong.
-    "pint>=0.24",
+    #
+    # 0.25 and not 0.24, which is why the floor on Python is 3.11: 0.24 does
+    # not resolve `MeV` to `mega_electron_volt`, so the physical-equality
+    # dimension would answer differently depending on the interpreter. A
+    # grader that compares units one way here and another way there is worse
+    # than one that declines to run.
+    "pint>=0.25",
 ]
 
 [project.optional-dependencies]
@@ -148,7 +154,7 @@ unresolved-import = "ignore"
 DEP002 = ["oold-llm-bench", "pytest-playwright"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 fix = true
 
@@ -157,7 +163,12 @@ select = [
     "YTT", "S", "B", "A", "C4", "T10", "SIM", "I", "C90", "E", "W", "F",
     "PGH", "UP", "RUF", "TRY",
 ]
-ignore = ["E501", "E731", "TRY003"]
+# UP042 wants `StrEnum` now that the floor is 3.11. These enums are written
+# into result records and compared as strings, and `str()` and `format()`
+# differ between the two forms across 3.11 and 3.12, so converting them
+# changes what a record says. That is its own change with its own tests, not
+# a side effect of a version bump.
+ignore = ["E501", "E731", "TRY003", "UP042"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]

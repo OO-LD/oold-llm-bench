@@ -20,7 +20,7 @@ import json
 import platform
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 __all__ = [
@@ -123,7 +123,7 @@ class Environment:
     oold_version: str | None = None
     python_version: str = field(default_factory=lambda: ".".join(map(str, sys.version_info[:3])))
     platform: str = field(default_factory=platform.platform)
-    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def describe(self) -> dict[str, Any]:
         return {

@@ -37,7 +37,7 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -326,7 +326,7 @@ def build(
             "note": "Fetch bytes warc_offset..warc_offset+warc_length-1 and check warc_digest.",
         },
         "licence": LICENCE,
-        "built_at": datetime.now(timezone.utc).date().isoformat(),
+        "built_at": datetime.now(UTC).date().isoformat(),
         "urls_in": urls_in,
         "resolved": len(kept),
         "excluded": dict(excluded.most_common()),

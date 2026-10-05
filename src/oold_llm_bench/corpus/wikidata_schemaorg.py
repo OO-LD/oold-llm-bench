@@ -74,7 +74,7 @@ import re
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -328,7 +328,7 @@ class GroundedCorpus:
 
     @property
     def retrieved_at(self) -> datetime:
-        return datetime.combine(date.fromisoformat(self.retrieved_at_date), datetime.min.time(), tzinfo=timezone.utc)
+        return datetime.combine(date.fromisoformat(self.retrieved_at_date), datetime.min.time(), tzinfo=UTC)
 
     @property
     def dropped_by_cap(self) -> int:

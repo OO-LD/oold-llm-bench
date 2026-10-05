@@ -19,9 +19,9 @@ import math
 import os
 import re
 from pathlib import Path
+from typing import Never
 
 import pytest
-from typing_extensions import Never
 
 from oold_llm_bench.extract import extract_json
 from oold_llm_bench.grading.triples import Quantity, Reference, TripleSet, make_triple

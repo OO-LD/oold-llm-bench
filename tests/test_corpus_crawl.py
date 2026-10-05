@@ -9,7 +9,7 @@ top level, a ``@type`` that is a list.
 
 import json
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -603,7 +603,7 @@ class TestFetchRecord:
         })
         result = crawler(stub, clock).fetch("https://example.org/a")
         assert result.url == "https://example.org/a"
-        assert result.fetched_at.tzinfo is timezone.utc
+        assert result.fetched_at.tzinfo is UTC
         assert result.robots_allowed is True
         assert result.status == 200
         assert len(result.content_hash) == 64
@@ -695,7 +695,7 @@ class TestMeta:
             url="https://example.org/a: b",
             content_hash="a" * 64,
             text_hash="b" * 64,
-            fetched_at=datetime(2026, 3, 4, 5, 6, 7, tzinfo=timezone.utc),
+            fetched_at=datetime(2026, 3, 4, 5, 6, 7, tzinfo=UTC),
             robots_allowed=True,
             status=200,
             entity_count=2,

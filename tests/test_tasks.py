@@ -4,7 +4,7 @@ The refusals are the point. Each one corresponds to a way the predecessor
 benchmark could score a wrong answer as a pass.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -129,7 +129,7 @@ class TestCorpusRef:
             document_id="d",
             content_hash="0" * 64,
             url="https://example.org/a",
-            retrieved_at=datetime(2026, 9, 26, tzinfo=timezone.utc),
+            retrieved_at=datetime(2026, 9, 26, tzinfo=UTC),
             licence="CC-BY-4.0",
             robots_allowed=True,
         )

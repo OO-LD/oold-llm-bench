@@ -23,7 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 QUNIT = "qunit:"
@@ -97,7 +97,7 @@ def build(schemas: Path, qudt_units: Path, out: Path) -> dict:
         # one machine kept its checkout is not provenance anyone can use.
         "source": schemas.name,
         "qudt_units": qudt_units.name,
-        "built_at": datetime.now(timezone.utc).date().isoformat(),
+        "built_at": datetime.now(UTC).date().isoformat(),
         "note": (
             "The symbol QUDT publishes for the unit each enumeration member "
             "denotes. 'by_kind' holds the names that denote different units "

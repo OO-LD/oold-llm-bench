@@ -69,7 +69,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -449,9 +449,9 @@ class WarcRef:
                 int(stamp[0:4]),
                 int(stamp[4:6]),
                 int(stamp[6:8]),
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             )
-        return datetime(2024, 10, 1, tzinfo=timezone.utc)
+        return datetime(2024, 10, 1, tzinfo=UTC)
 
 
 @dataclass(frozen=True)

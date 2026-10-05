@@ -63,7 +63,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -212,7 +212,7 @@ class Corpus:
     def retrieved_at(self) -> datetime:
         """When the archive this was built from was downloaded."""
         stamp = str(self.dataset.get("retrieved_at") or self.built_at)
-        return datetime.combine(date.fromisoformat(stamp), datetime.min.time(), tzinfo=timezone.utc)
+        return datetime.combine(date.fromisoformat(stamp), datetime.min.time(), tzinfo=UTC)
 
     @property
     def dropped_by_cap(self) -> int:

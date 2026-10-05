@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -431,7 +431,7 @@ def build(  # noqa: C901 - one pass, one stated reason per branch
         "wikidata_base": "http://www.wikidata.org/entity/",
         "schemas": schemas.name,
         "qudt_units": qudt_units_path.name,
-        "built_at": datetime.now(timezone.utc).date().isoformat(),
+        "built_at": datetime.now(UTC).date().isoformat(),
         "examples_in": examples_in,
         "resolved": len(kept),
         "excluded": dict(excluded.most_common()),
@@ -468,7 +468,7 @@ def main() -> None:
     parser.add_argument("--schemas", type=Path, required=True, help="the canonical quantity schemas")
     parser.add_argument("--qudt-units", type=Path, required=True, help="qudt_units.json from the schema generator")
     parser.add_argument("--units-cache", type=Path, default=None, help="where the Wikidata unit table is kept")
-    parser.add_argument("--retrieved-at", default=datetime.now(timezone.utc).date().isoformat())
+    parser.add_argument("--retrieved-at", default=datetime.now(UTC).date().isoformat())
     parser.add_argument("--cap", type=int, default=400, help="examples kept per kind, 0 for all")
     parser.add_argument("--refresh", action="store_true", help="requery Wikidata instead of reading the cache")
     parser.add_argument("--out", type=Path, default=Path("src/oold_llm_bench/data/wiki_measurements.json"))

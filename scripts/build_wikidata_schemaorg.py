@@ -49,7 +49,7 @@ import hashlib
 import json
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -596,7 +596,7 @@ def build(  # noqa: C901 - one pass, one stated reason per branch
     payload = {
         "schema_version": "1",
         "name": "Wikidata-schema.org",
-        "built_at": datetime.now(timezone.utc).date().isoformat(),
+        "built_at": datetime.now(UTC).date().isoformat(),
         "retrieved_at": retrieved_at,
         "sources": {
             "schemaorg": {
@@ -992,7 +992,7 @@ def main() -> None:
     parser.add_argument("--cap", type=int, default=120, help="entities kept per class, 0 for all")
     parser.add_argument("--catalogue-size", type=int, default=25, help="classes a cell offers when verifying")
     parser.add_argument("--guessable-at", type=float, default=GUESSABLE, help="see GUESSABLE")
-    parser.add_argument("--retrieved-at", default=datetime.now(timezone.utc).date().isoformat())
+    parser.add_argument("--retrieved-at", default=datetime.now(UTC).date().isoformat())
     args = parser.parse_args()
 
     payload, documents = build(args.cache, None if args.cap == 0 else args.cap, args.retrieved_at, args.guessable_at)
