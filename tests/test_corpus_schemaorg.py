@@ -38,6 +38,7 @@ from oold_llm_bench.corpus.schemaorg import (
     legible_slots,
     linked_classes,
     load_classes,
+    mentions_for,
     opaque_name,
     property_identifier,
     rename_map,
@@ -1058,7 +1059,13 @@ class TestTheDefaultNotationHasNotMoved:
         """Defaults excluded, so a field added to the record with a default
         cannot move this. The guard is about what the corpus says, and a slot
         nothing fills says nothing: re-pinning a digest for a schema addition
-        is how a guard stops guarding."""
+        is how a guard stops guarding.
+
+        It does move when the corpus starts saying something it did not, which
+        is what recording a mention per entity did. That is a different event
+        from a rendering change, and only the second makes two scores
+        incomparable, so read this digest with what moved it rather than as a
+        comparability verdict on its own."""
         digest = hashlib.sha256()
         for task in grid():
             digest.update(task.model_dump_json(exclude_defaults=True).encode("utf-8"))
@@ -1067,7 +1074,7 @@ class TestTheDefaultNotationHasNotMoved:
         # nothing it shows a model changed; only the shape of the record did.
         # The quantity pin moved for a different and larger reason, which is
         # recorded there.
-        assert digest.hexdigest() == "5920fe063146625c805031ab039d5bc9ea44815815a23efb0b21d415a3057af4"
+        assert digest.hexdigest() == "631c9449224bdc622a0944e3f7dda268e46114cadbb57c5063061649e8f5fe29"
 
     def test_canonical_is_what_a_caller_gets_without_asking(self):
         assert generate_task(CLASSES, task_id="t", seed=3) == generate_task(
@@ -1802,3 +1809,39 @@ class TestTheDrawStaysInsideTheCatalogueCap:
         assert len(BOOK.own_slots) < CATALOGUE_SLOTS
         task = generate_task([BOOK], task_id="t1", seed=7, n_slots=3, catalogue=("Book",))
         assert task.expected
+
+
+class TestWhatAnEntityIsCalled:
+    """The step that identifies an entity answers the words it read it from.
+
+    Scored against what the corpus wrote, so the corpus has to record it.
+    `designating_slots` already decides which values read as an appellation;
+    these pin that every entity gets them and not only link targets.
+    """
+
+    def _drawn(self, named: bool, n: int = 20):
+        rng = random.Random(7)  # noqa: S311 - a reproducible draw is the requirement
+        return [entity for _ in range(n) for entity in draw(CLASSES, rng, 2, 4, named=named)]
+
+    def test_a_mention_is_a_value_the_document_carries(self):
+        task = generate_task(CLASSES, task_id="t", seed=5, n_entities=2)
+        for instance in task.expected:
+            for mention in instance.mentions:
+                assert mention in task.document
+
+    def test_naming_the_draw_names_every_entity_that_can_be_named(self):
+        unnamed = [entity for entity in self._drawn(named=True) if not mentions_for(entity)]
+        assert all(not designating_slots(entity.cls) for entity in unnamed), (
+            "an entity went unnamed although its class offers a slot that reads as a name"
+        )
+
+    def test_a_class_offering_no_naming_slot_stays_unnamed(self):
+        """A property of the vocabulary, not of the draw. Some classes have no
+        slot whose value stands in a sentence as the name of an entry, and the
+        mention dimension is absent for them rather than zero."""
+        assert any(not designating_slots(entity.cls) for entity in self._drawn(named=True))
+
+    def test_the_default_draw_is_unchanged(self):
+        """Opt-in, so no corpus already measured moves underneath a run."""
+        rng, other = random.Random(3), random.Random(3)  # noqa: S311 - same
+        assert draw(CLASSES, rng, 2, 4) == draw(CLASSES, other, 2, 4, named=False)

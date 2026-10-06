@@ -1297,6 +1297,7 @@ def draw(
     labelling: Labelling = Labelling.NAMED,
     against: list[SchemaClass] | None = None,
     linked: bool = False,
+    named: bool = False,
 ) -> list[Entity]:
     """Choose the classes and fill their slots, before any prose exists.
 
@@ -1331,10 +1332,19 @@ def draw(
         raise ValueError(f"no schema.org class offers {n_slots} literal slots")
     if n_entities > len(usable):
         raise ValueError(f"asked for {n_entities} entities, corpus offers {len(usable)}")
-    return [
-        Entity(key=f"e{index}", cls=cls, values=seed_values(cls, rng, n_slots))
-        for index, cls in enumerate(rng.sample(usable, n_entities), start=1)
-    ]
+    drawn = []
+    for index, cls in enumerate(rng.sample(usable, n_entities), start=1):
+        # `named` pins a designating slot into every entity, the way a linked
+        # draw already pins one into a target. Without it an entity is named
+        # only when it happens to draw one, which is about a quarter of them,
+        # and the step that answers what an entity was read from has nothing
+        # to be right about on the other three.
+        naming = None
+        if named:
+            offered = list(designating_slots(cls))
+            naming = rng.choice(offered) if offered else None
+        drawn.append(Entity(key=f"e{index}", cls=cls, values=seed_values(cls, rng, n_slots, must_include=naming)))
+    return drawn
 
 
 def draw_linked(
@@ -2055,7 +2065,28 @@ def expected_for(entity: Entity, variant: Variant) -> ExpectedInstance:
         key=entity.key,
         class_path=class_identifier(entity.cls.name, variant),
         fields=fields,
+        mentions=mentions_for(entity),
     )
+
+
+def mentions_for(entity: Entity) -> tuple[str, ...]:
+    """The words this entity's record can be referred to by.
+
+    Its designating slots' values, spelled as the document spells them.
+    :func:`designating_slots` already decides which of a class's slots read as
+    an appellation rather than as a record number or a filing date, and a
+    linked document already relies on that: the designator a link points with
+    is drawn from exactly this set.
+
+    Every entity gets them, not only the ones something links to. The step
+    that identifies an entity answers the words it read it from, and an entity
+    nothing points at is referred to by its own name just the same.
+
+    Renaming does not touch these. A variant rewrites identifiers, and a
+    designator is a value, so it reaches the page unchanged either way.
+    """
+    naming = {slot.name for slot in designating_slots(entity.cls)}
+    return tuple(spell(value) for slot, value in entity.values if slot.name in naming)
 
 
 def generate_task(
