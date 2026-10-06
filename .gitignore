@@ -240,3 +240,6 @@ node_modules/
 .benchmarks/
 benchmark_results.json
 .claude/
+
+# Working notes, not a published document.
+TODO.md

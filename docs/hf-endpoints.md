@@ -33,7 +33,7 @@ create_inference_endpoint(
     custom_image={"vLLM": {"url": "vllm/vllm-openai:v0.30.0", "port": 8000}},
     container_args=[
         "--enable-lora",
-        "--lora-modules", "oold=OO-LD/oold-lean-qwen4b-r16-s1000",
+        "--lora-modules", "oold=OO-LD/oold-quantities-lean-qwen4b-r16-s1000",
         "--max-lora-rank", "16",
         "--max-model-len", "24576",
         "--structured-outputs-config.backend", "guidance",

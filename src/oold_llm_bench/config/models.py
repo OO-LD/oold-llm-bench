@@ -141,7 +141,7 @@ LADDER: tuple[ModelEntry, ...] = (
         family="qwen",
         transport="vllm_4b",
         notes=(
-            "OO-LD/oold-lean-qwen4b-r16-s1000, trained on HF Jobs at "
+            "OO-LD/oold-quantities-lean-qwen4b-r16-s1000, trained on HF Jobs at "
             "r=16 for 1000 steps with target_modules all-linear. The recipe "
             "is identical for Phi-4 and the DeepSeek distill, which is the "
             "point: the earlier adapters named Qwen's module list, which "
@@ -257,7 +257,7 @@ LADDER: tuple[ModelEntry, ...] = (
         family="qwen",
         transport="vllm_4b",
         notes=(
-            "OO-LD/Qwen3.5-4B-oold-lean-r64-s1000, trained on the box. "
+            "OO-LD/oold-quantities-lean-qwen4b-r64-s1000, trained on the box. "
             "Rank raised fourfold, exposure held. Final training loss 0.8319 against the baseline's 0.8320. "
             "One of a pair that moves a single axis each against the r=16 "
             "1000-step adapter, which reached class accuracy 1.00 and unit "
@@ -280,7 +280,7 @@ LADDER: tuple[ModelEntry, ...] = (
         family="qwen",
         transport="vllm_4b",
         notes=(
-            "OO-LD/Qwen3.5-4B-oold-lean-r16-s4000, trained on the box. "
+            "OO-LD/oold-quantities-lean-qwen4b-r16-s4000, trained on the box. "
             "Exposure raised fourfold, rank held. Final training loss 0.7689 against the baseline's 0.8320. "
             "One of a pair that moves a single axis each against the r=16 "
             "1000-step adapter, which reached class accuracy 1.00 and unit "
@@ -303,7 +303,7 @@ LADDER: tuple[ModelEntry, ...] = (
         family="qwen",
         transport="vllm_4b",
         notes=(
-            "OO-LD/Qwen3.5-4B-oold-lean-20k-s10000. Twenty thousand "
+            "OO-LD/oold-quantities-lean-20k-qwen4b-r16-s10000. Twenty thousand "
             "examples, one pass, r=16. Rank and repetition were both ruled "
             "out first: 16 to 64 left F1 at 0.09 against 0.10, and four "
             "passes took it to 0.03 while the training loss fell, which is "
@@ -340,10 +340,53 @@ LADDER: tuple[ModelEntry, ...] = (
         family="qwen",
         transport="vllm_9b",
         notes=(
-            "OO-LD/oold-lean-qwen9b-r16-s1000. the baseline recipe, retrained with all-linear so the sweep differs in one thing. Swept at the context "
+            "OO-LD/oold-quantities-lean-qwen9b-r16-s1000. the baseline recipe, retrained with all-linear so the sweep differs in one thing. Swept at the context "
             "floor only, because that is the one rung where a tune is worth "
             "anything: with the catalogue present every adapter measured so "
             "far costs rather than buys."
+        ),
+    ),
+    ModelEntry(
+        model="qwen3.5-9b-r16-s1000-matched",
+        model_version="1",
+        provider_profile="openai",
+        tier="small",
+        family="qwen",
+        transport="vllm_9b",
+        trained_on={
+            "corpus": "quantities",
+            "signal": "named",
+            "describe_catalogue": False,
+            "pin_units": False,
+            "catalogue_size": 100,
+        },
+        notes=(
+            "OO-LD/oold-quantities-lean-qwen9b-r16-s1000-matched. The exposure control: "
+            "byte-identical to the 4000-step payload but for max_steps, and "
+            "checked at the tensor level rather than from a config field. "
+            "qwen3.5-9b-r16-s1000 cannot serve as this control: 716 tensors "
+            "against 256, because it also adapts linear_attn and the whole "
+            "27-block vision tower, which never sees an image here."
+        ),
+    ),
+    ModelEntry(
+        model="qwen3.5-9b-r16-s4000",
+        model_version="1",
+        provider_profile="openai",
+        tier="small",
+        family="qwen",
+        transport="vllm_9b",
+        trained_on={
+            "corpus": "quantities",
+            "signal": "named",
+            "describe_catalogue": False,
+            "pin_units": False,
+            "catalogue_size": 100,
+        },
+        notes=(
+            "OO-LD/oold-quantities-lean-qwen9b-r16-s4000. Exposure raised fourfold "
+            "against qwen3.5-9b-r16-s1000-matched, every other field held. "
+            "Final loss 0.7307 against the control's 0.8298."
         ),
     ),
     ModelEntry(
@@ -361,7 +404,7 @@ LADDER: tuple[ModelEntry, ...] = (
         family="qwen",
         transport="vllm_9b",
         notes=(
-            "OO-LD/oold-lean-qwen9b-r64-s1000. rank raised fourfold, exposure held. Swept at the context "
+            "OO-LD/oold-quantities-lean-qwen9b-r64-s1000. rank raised fourfold, exposure held. Swept at the context "
             "floor only, because that is the one rung where a tune is worth "
             "anything: with the catalogue present every adapter measured so "
             "far costs rather than buys."
@@ -383,7 +426,7 @@ LADDER: tuple[ModelEntry, ...] = (
         transport="vllm_9b",
         notes=(
             "Qwen3.5-9B with the LoRA adapter "
-            "OO-LD/Qwen3.5-9B-oold-quantities-bf16-e2, r=16. Same "
+            "OO-LD/oold-quantities-qwen9b-r16-e2-modulelist, r=16. Same "
             "process as the base, same caveat on corpus."
         ),
     ),
@@ -425,7 +468,7 @@ LADDER: tuple[ModelEntry, ...] = (
         family="deepseek",
         transport="vllm_27b",
         notes=(
-            "OO-LD/oold-lean-dsr1-r16-s1000, the same r=16 all-linear "
+            "OO-LD/oold-quantities-lean-dsr1-r16-s1000, the same r=16 all-linear "
             "recipe and thousand examples as every other adapter here. 448 "
             "adapted modules against Phi-4's 160 and the 4B's 346, because "
             "all-linear resolves to what each architecture actually has."
@@ -473,7 +516,7 @@ LADDER: tuple[ModelEntry, ...] = (
         family="qwen",
         transport="vllm_27b",
         notes=(
-            "OO-LD/oold-lean-qwen27b-r16-s1000, the same r=16 "
+            "OO-LD/oold-quantities-lean-qwen27b-r16-s1000, the same r=16 "
             "all-linear recipe as every other adapter here. Completes the "
             "same-family size series 4B, 9B, 27B at the context floor."
         ),
@@ -577,7 +620,7 @@ LADDER: tuple[ModelEntry, ...] = (
         family="phi",
         transport="vllm_4b",
         notes=(
-            "OO-LD/oold-lean-phi4-r16-s1000. The same r=16 "
+            "OO-LD/oold-quantities-lean-phi4-r16-s1000. The same r=16 "
             "all-linear recipe and the same thousand examples as the Qwen "
             "adapters, which is what makes the two comparable: a module list "
             "naming Qwen's projections matches nothing on Phi-4, where "

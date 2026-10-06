@@ -74,7 +74,7 @@ Hub is then publication rather than plumbing.
 
 `lora_path` is documented only with local paths, and that reading was too
 cautious. Measured 2026-10-03 against vLLM 0.30.0: posting
-`{"lora_name": "probe-hub", "lora_path": "OO-LD/oold-lean-qwen4b-r16-s1000"}`
+`{"lora_name": "probe-hub", "lora_path": "OO-LD/oold-quantities-lean-qwen4b-r16-s1000"}`
 returns 200, the adapter appears in `/v1/models`, and no plugin was loaded.
 So a tune reaches the benchmark with no compose change at all: train, push,
 POST, run.
