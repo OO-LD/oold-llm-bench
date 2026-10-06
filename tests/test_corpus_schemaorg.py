@@ -1055,15 +1055,19 @@ class TestTheDefaultNotationHasNotMoved:
     """
 
     def test_the_whole_grid_of_records_hashes_as_it_did(self):
+        """Defaults excluded, so a field added to the record with a default
+        cannot move this. The guard is about what the corpus says, and a slot
+        nothing fills says nothing: re-pinning a digest for a schema addition
+        is how a guard stops guarding."""
         digest = hashlib.sha256()
         for task in grid():
-            digest.update(task.model_dump_json().encode("utf-8"))
+            digest.update(task.model_dump_json(exclude_defaults=True).encode("utf-8"))
         # Moved 2026-10-04 because TaskRecord gained catalogue_enums, which
         # every record serialises. schema.org declares no unit slot, so
         # nothing it shows a model changed; only the shape of the record did.
         # The quantity pin moved for a different and larger reason, which is
         # recorded there.
-        assert digest.hexdigest() == "d22f1da0add365af827cec851fe4c4e69a6d7e04bd01a33238df50f39953a8aa"
+        assert digest.hexdigest() == "5920fe063146625c805031ab039d5bc9ea44815815a23efb0b21d415a3057af4"
 
     def test_canonical_is_what_a_caller_gets_without_asking(self):
         assert generate_task(CLASSES, task_id="t", seed=3) == generate_task(

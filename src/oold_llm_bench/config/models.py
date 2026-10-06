@@ -370,6 +370,28 @@ LADDER: tuple[ModelEntry, ...] = (
         ),
     ),
     ModelEntry(
+        model="qwen3.5-9b-r16-s1000-linattn",
+        model_version="1",
+        provider_profile="openai",
+        tier="small",
+        family="qwen",
+        transport="vllm_9b",
+        trained_on={
+            "corpus": "quantities",
+            "signal": "named",
+            "describe_catalogue": False,
+            "pin_units": False,
+            "catalogue_size": 100,
+        },
+        notes=(
+            "OO-LD/oold-quantities-lean-qwen9b-r16-s1000-linattn. The middle "
+            "rung of the module ladder: text projections plus linear_attn, no "
+            "vision tower. 496 tensors against the text-only control's 256 and "
+            "the published adapter's 716, so what the visual encoder is worth "
+            "is the difference between this and that."
+        ),
+    ),
+    ModelEntry(
         model="qwen3.5-9b-r16-s4000",
         model_version="1",
         provider_profile="openai",

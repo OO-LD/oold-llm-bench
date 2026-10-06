@@ -61,6 +61,35 @@ class Dimension(str, Enum):
     against an entity that was found. Absent rather than zero: a dimension
     reporting zero where it does not apply would pull down every cell it
     appeared in."""
+    MENTION = "mention"
+    """Whether an entity was reported under words the document uses for it.
+
+    The identify step answers a class and the text it read that class from,
+    and the steps after it are told the entity by those words. A plan that
+    finds the right number of entities and names them wrongly hands the next
+    step a question about something else.
+
+    Soft by construction: an entity may be referred to several ways and any
+    of them counts, matched after the same folding
+    :func:`~oold_llm_bench.grading.compare.normalise_text` applies elsewhere.
+    A variance in the mention does not fail the entity. It is reported on its
+    own, because the thing worth knowing is whether the words point at the
+    right entity, not whether they are the words we happened to record."""
+    FILLABLE = "fillable"
+    """Whether the properties a document fills were named, before filling them.
+
+    Precision and recall over the set, against the slots the corpus actually
+    stated. Separate from :attr:`PROPERTY`, which scores what was filled:
+    a step can name the right slots and the next one still get the values
+    wrong, and naming slots the document never fills makes the extract schema
+    demand values that are not there."""
+    PATCH = "patch"
+    """Whether a merge kept what was known, added what was new, and refused
+    what contradicted.
+
+    Three counts rather than one. A merge that preserves everything and adds
+    nothing scores the same as one that overwrites, under any single number,
+    and those are opposite failures."""
     PROVENANCE = "provenance"
     GROUNDED = "grounded"
     """Whether a produced text value can be found in the document it came from.

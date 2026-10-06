@@ -133,6 +133,9 @@ def test_every_dimension_is_reported_separately():
         "unit_physical",
         "shortlist",
         "duplicate",
+        "mention",
+        "fillable",
+        "patch",
         "provenance",
         "grounded",
     ]

@@ -456,10 +456,14 @@ class TestTheDefaultNotationHasNotMoved:
     """
 
     def test_the_whole_grid_of_records_hashes_as_it_did(self):
+        """Defaults excluded, so a field added to the record with a default
+        cannot move this. The guard is about what the corpus says, and a slot
+        nothing fills says nothing: re-pinning a digest for a schema addition
+        is how a guard stops guarding."""
         digest = hashlib.sha256()
         for task in grid():
-            digest.update(task.model_dump_json().encode("utf-8"))
-        assert digest.hexdigest() == "1feb33efaa95d3de74ad907e4b6194234a9026348e70b3c6316dec411b2bfcca"
+            digest.update(task.model_dump_json(exclude_defaults=True).encode("utf-8"))
+        assert digest.hexdigest() == "1b85e4c8c2d97d7dc439ed83cbf2e65e0c643ba93217fe9c90b4076f9679ed58"
 
     def test_canonical_is_what_a_caller_gets_without_asking(self):
         assert generate_task(CORPUS, task_id="t", seed=3) == generate_task(

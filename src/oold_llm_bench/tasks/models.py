@@ -113,6 +113,18 @@ class ExpectedInstance(BaseModel):
     from disk scores the same."""
     optional_fields: dict[str, Any] = Field(default_factory=dict)
     """Scored when present, not counted as a miss when absent."""
+    mentions: tuple[str, ...] = ()
+    """The words the document refers to this entity by.
+
+    A list, because one entity is named several ways in the same document and
+    a step answering any of them has read it correctly. Empty where the corpus
+    does not record it, which is not the same as empty words: a step is then
+    scored on class and count and not on the mention at all.
+
+    What the steps after the first are told the entity by. A plan that finds
+    the right number of entities and names them wrongly hands the next step a
+    question about something else, and that failure is invisible in a score
+    over the values."""
     allow_subclass: bool = True
 
     @field_validator("fields")
