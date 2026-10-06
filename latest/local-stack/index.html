@@ -1,0 +1,1204 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Hypothesis-driven benchmark for schema-constrained LLM extraction">
+      
+      
+      
+        <link rel="canonical" href="https://OO-LD.github.io/oold-llm-bench/0.1.0/local-stack/">
+      
+      
+        <link rel="prev" href="../results/">
+      
+      
+        <link rel="next" href="../hf-endpoints/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="zensical-0.0.65">
+    
+    
+      
+        <title>Local stack - oold-llm-bench</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../assets/stylesheets/modern/main.40d3fdbb.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#training-and-serving-an-open-weight-model-on-the-local-box" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="./.." title="oold-llm-bench" class="md-header__button md-logo" aria-label="oold-llm-bench" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            oold-llm-bench
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Local stack
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/OO-LD/oold-llm-bench" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    OO-LD/oold-llm-bench
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="./.." title="oold-llm-bench" class="md-nav__button md-logo" aria-label="oold-llm-bench" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+
+    </a>
+    oold-llm-bench
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/OO-LD/oold-llm-bench" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    OO-LD/oold-llm-bench
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Home
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../findings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Findings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../method/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Method
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipelines
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Pipelines
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipelines/single_shot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Single shot
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipelines/select_then_fill/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Select then fill
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipelines/segmented/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Segmented
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipelines/multi_step/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Multi step
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../arms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Two arms on one document
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../corpora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Corpora
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Results
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Running
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Running
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Local stack
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Local stack
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#why-a-local-box-at-all" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why a local box at all
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The shape
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#training-as-api-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Training, as API calls
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Training, as API calls">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-path-convention-which-no-endpoint-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The path convention, which no endpoint reports
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#serving-as-api-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Serving, as API calls
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-enforcement-probe-which-runs-before-every-grid" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The enforcement probe, which runs before every grid
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operating-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Operating notes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-this-does-not-solve" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What this does not solve
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hf-endpoints/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  HF endpoints
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#why-a-local-box-at-all" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why a local box at all
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The shape
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#training-as-api-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Training, as API calls
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Training, as API calls">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-path-convention-which-no-endpoint-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The path convention, which no endpoint reports
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#serving-as-api-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Serving, as API calls
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-enforcement-probe-which-runs-before-every-grid" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The enforcement probe, which runs before every grid
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operating-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Operating notes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-this-does-not-solve" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What this does not solve
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+  
+
+
+<h1 id="training-and-serving-an-open-weight-model-on-the-local-box">Training and serving an open-weight model on the local box<a class="headerlink" href="#training-and-serving-an-open-weight-model-on-the-local-box" title="Permanent link">&para;</a></h1>
+<p>What runs where, which API calls drive it, and what is worth knowing before
+starting. Against Unsloth Studio 2026.9.14 and vLLM 0.30.0 on two NVIDIA
+A40s.</p>
+<h2 id="why-a-local-box-at-all">Why a local box at all<a class="headerlink" href="#why-a-local-box-at-all" title="Permanent link">&para;</a></h2>
+<p>Azure fine-tuning works and produced the H4 result, but it is closed-weight.
+Two things need weights we control:</p>
+<p><strong>A grammar that accepts arbitrary JSON Schema.</strong> Azure's <code>strict</code> mode
+refuses 48 per cent of real-world schemas, measured on 300 of
+JSONSchemaBench's. vLLM applies a grammar to whatever schema it is given, so
+the union arm and the grounded arm can run as declared instead of as whatever
+survived a provider subset.</p>
+<p><strong>A tuned model whose prompt is a few hundred tokens instead of ten
+thousand.</strong> Prefill dominates everything here: a 15,829-token call answers in
+39 seconds idle. If the vocabulary moves into the weights, the prompt and the
+wall clock both collapse.</p>
+<h2 id="the-shape">The shape<a class="headerlink" href="#the-shape" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>card 0                              card 1
+  vllm-9b   Qwen3.5-9B  util 0.60     unsloth   training
+  vllm-4b   Qwen3.5-4B  util 0.28
+</code></pre></div>
+<p>Both vLLM services sit behind Caddy on their own hostnames. Unsloth is pinned
+to card 1 with <code>device_ids: ['1']</code> so a tune and a grid can run at once.</p>
+<h2 id="training-as-api-calls">Training, as API calls<a class="headerlink" href="#training-as-api-calls" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>POST /api/datasets/upload              multipart, one file field
+POST /api/train/start                  -&gt; job_id
+GET  /api/train/status                 poll until phase == completed
+GET  /api/train/runs/{job_id}          -&gt; run.preview_ref
+POST /api/export/load-checkpoint       /opt/unsloth-studio/outputs/{preview_ref}
+POST /api/export/export/lora           push_to_hub + repo_id + hf_token
+</code></pre></div>
+<p><code>results_local/ft_pipeline.py</code> is this loop end to end, one model per call,
+pushing each adapter to the Hub before starting the next.</p>
+<h3 id="the-path-convention-which-no-endpoint-reports">The path convention, which no endpoint reports<a class="headerlink" href="#the-path-convention-which-no-endpoint-reports" title="Permanent link">&para;</a></h3>
+<p>This is the step that blocks everything else. The API hides filesystem paths
+by design: <code>models-folder</code> returns <code>{"path": ""}</code>, <code>cache_path</code> is <code>""</code>,
+<code>run.config.output_dir</code> is <code>None</code>, and a run's <code>output_dir</code> is an opaque
+<code>ref:</code> handle that <code>load-checkpoint</code> rejects. Artifacts are nevertheless at:</p>
+<div class="highlight"><pre><span></span><code>/opt/unsloth-studio/outputs/{preview_ref}     the adapter a run wrote
+/opt/unsloth-studio/exports/{ref}             what an export produced
+</code></pre></div>
+<p>and <code>preview_ref</code> <em>is</em> on the run record. So the path is reconstructable even
+though nothing will tell you it.</p>
+<h2 id="serving-as-api-calls">Serving, as API calls<a class="headerlink" href="#serving-as-api-calls" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>POST /v1/load_lora_adapter   {"lora_name": ..., "lora_path": "/adapters/{ref}"}
+POST /v1/unload_lora_adapter
+</code></pre></div>
+<p>Needs <code>VLLM_ALLOW_RUNTIME_LORA_UPDATING=True</code> and <code>--enable-lora</code>. Mount
+Unsloth's output directory into vLLM read-only and the adapter it just wrote
+is the one vLLM loads: no merge, no GGUF conversion, no Hub round trip. The
+Hub is then publication rather than plumbing.</p>
+<p><code>lora_path</code> is documented only with local paths, and that reading was too
+cautious. Measured 2026-10-03 against vLLM 0.30.0: posting
+<code>{"lora_name": "probe-hub", "lora_path": "OO-LD/oold-lean-qwen4b-r16-s1000"}</code>
+returns 200, the adapter appears in <code>/v1/models</code>, and no plugin was loaded.
+So a tune reaches the benchmark with no compose change at all: train, push,
+POST, run.</p>
+<p>The <code>lora_hf_hub_resolver</code> plugin solves a different problem, loading an
+adapter because a request named a model nobody has loaded yet, and it is the
+one carrying the remote-download warning. Explicit <code>lora_path</code> does not need
+it.</p>
+<p><code>load_inplace: true</code> replaces an adapter without interrupting inference, which
+is what makes a second tune a swap rather than a restart.</p>
+<h2 id="the-enforcement-probe-which-runs-before-every-grid">The enforcement probe, which runs before every grid<a class="headerlink" href="#the-enforcement-probe-which-runs-before-every-grid" title="Permanent link">&para;</a></h2>
+<p>A backend that cannot express a constraint proceeds unconstrained and still
+answers 200. That is worse than a refusal, because it records.</p>
+<p>Send a schema whose <code>unit</code> is <code>{"enum": ["meter"]}</code> against a document that
+says "metres". Measured 2026-10-03 on <code>qwen3.5-9b</code>:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>free decoding</td>
+<td><code>"quantity": 880, "unit": "metres"</code></td>
+</tr>
+<tr>
+<td><code>response_format: json_schema</code></td>
+<td><code>"type": "Length", "value": 880, "unit": "meter"</code></td>
+</tr>
+</tbody>
+</table>
+<p>Same model, same prompt. The second is enforced. Any cell from a backend that
+fails this probe is a cell about nothing.</p>
+<h2 id="operating-notes">Operating notes<a class="headerlink" href="#operating-notes" title="Permanent link">&para;</a></h2>
+<p><strong>1. Studio runs two inference backends.</strong> <code>LlamaCppBackend</code> for GGUF has a
+grammar engine. The Transformers path has neither a grammar engine nor paged
+attention. A GGUF model took 15,829-token prompts and enforced schemas, while
+a merged export OOMed at 10,000 tokens with 30 GB free and refused
+<code>response_format</code> outright. Not configurable, architectural.</p>
+<p><strong>2. <code>load-checkpoint</code> is the exporter, not the server.</strong> It answers
+<code>/v1/chat/completions</code>, so a short prompt returns 200 and looks like serving.
+It is holding the model so it can be merged.</p>
+<p><strong>3. An OOM may be another model, not the input.</strong> <code>export/cleanup</code> frees
+nothing. <code>POST /v1/unload</code> with an explicit <code>model_path</code> frees everything.
+The message blames the prompt either way.</p>
+<p><strong>4. <code>download-progress</code> lies.</strong> It reported <code>on_disk=True, progress=1.0</code> for
+four GGUFs of which <code>gguf-variants</code> showed zero downloaded. Trust
+<code>cached-gguf</code> and <code>gguf-variants</code>, which report per file.</p>
+<p><strong>5. <code>/api/hub/download</code> with a variant is a no-op.</strong> Accepted, <code>state:
+running</code>, no active downloads, nothing lands. Both request shapes, twice.
+Whatever put the 27B in the cache was not this endpoint.</p>
+<p><strong>6. <code>num_train_epochs</code> is silently ignored.</strong> Only <code>max_steps</code> takes effect.
+A run asking for 2 epochs ran 500 steps, which at batch 2 over 1,000 examples
+is one. The comparable unit against an Azure job is epochs: 1,000 examples x
+2 epochs / batch 2 = 1,000 steps.</p>
+<p><strong>7. Studio passes arguments its own TRL has removed.</strong>
+<code>SFTConfig.__init__() got an unexpected keyword argument 'max_seq_length'</code>
+blocked every run until the image was pulled. It is sent whether or not you
+set it, so there is nothing to work around in the request.</p>
+<p><strong>8. <code>/opt/unsloth-studio</code> is not persisted by default.</strong> <code>studio.db</code> is, so
+run records survive a container recreate while the weights they name do not.
+Four adapters were lost this way, and the one that survived was already on
+the Hub. Mount <code>outputs</code>, <code>exports</code> and <code>assets/datasets</code>, and push each adapter
+as soon as its run finishes.</p>
+<p><strong>9. QLoRA is not recommended on Qwen3.5.</strong> Unsloth's own page: "not
+recommended to do QLoRA (4-bit) training on the Qwen3.5 models, no matter MoE
+or dense", for larger than usual quantization error. Its code comments
+contradict this for dense models. bf16 LoRA needs 10 GB at 4B and 22 GB at
+9B, so the argument is cheap to avoid.</p>
+<p><strong>10. Qwen3.5 reserves a Mamba block per concurrent sequence.</strong> It is a
+Gated DeltaNet architecture, so <code>max_num_seqs</code> costs state cache as well as
+KV: <code>max_num_seqs (256) exceeds available Mamba cache blocks (166)</code>. Lower it
+rather than raise <code>gpu-memory-utilization</code>, which takes memory from whatever
+else shares the card.</p>
+<p><strong>11. Two models on one card starves one of them, whichever is smaller.</strong>
+Qwen3.5 reserves a Mamba state block per sequence, so a share sized by weights
+is not a share sized by work. At 0.28/0.60 the 4B preempted 485 times and
+recomputed every prefill; at 0.36/0.52 the 9B preempted instead and fell to
+2.7 requests a minute. There is no split that leaves both comfortable. One
+model per card removed the question, and the 4B went from 15 to 45 cells a
+minute.</p>
+<p><strong>12. <code>max_tokens</code> defaulting to <code>None</code> hands over the whole context window.</strong>
+A 9B that began restating its own schema generated sixteen thousand tokens a
+call and never stopped, and because the runner consumes outcomes in declared
+order three such calls shut the record stream for forty minutes while the card
+stayed busy. Bound it. A truncated answer records as a parse error, which is
+honest and cheap.</p>
+<p><strong>13. A LoRA timeout is a floor, not a ceiling, until retries are set.</strong>
+LangChain retries twice by default, so a 900-second timeout was three quarters
+of an hour before a hung call gave up.</p>
+<p><strong>14. <code>gpu-memory-utilization</code> is a fraction of the whole card, measured
+against free memory at startup.</strong> Two models on one card is therefore order
+dependent, and <code>restart: unless-stopped</code> on both races them. Use <code>depends_on</code>
+with a healthcheck and start the larger one first.</p>
+<h2 id="what-this-does-not-solve">What this does not solve<a class="headerlink" href="#what-this-does-not-solve" title="Permanent link">&para;</a></h2>
+<p>A vLLM process serves one base model. An adapter loads at runtime without a
+restart, a different base does not. For a short base list this is two compose
+services. Past that, llama-swap puts the declaration in a per-model file
+instead, at the cost of a Docker socket mount and undocumented passthrough of
+the flags this benchmark depends on.</p>
+<p><strong>Pin the image tag.</strong> vLLM has moved these flags before, <code>guided_json</code> was
+removed in 0.12.0, and <code>latest</code> means a <code>docker compose pull</code> can change what
+<code>schema-dump-catalog-flat-enforced-strict</code> denotes with no trace in the results.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../results/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Results">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Results
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../hf-endpoints/" class="md-footer__link md-footer__link--next" aria-label="Next: HF endpoints">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                HF endpoints
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"..","features":["content.code.copy","navigation.footer","search.highlight"],"redirect":null,"search":"../assets/javascripts/workers/search.7d14d953.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.c04ba553.min.js"></script>
+      
+    
+  </body>
+</html>
