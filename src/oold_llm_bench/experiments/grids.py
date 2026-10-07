@@ -97,6 +97,28 @@ def _wikidata(per_class: int, schemas: Path | None) -> list[TaskRecord]:
     return wikidata_schemaorg_tasks(per_class)
 
 
+def _wikidata_own_words(per_class: int, schemas: Path | None) -> list[TaskRecord]:
+    """The same tasks, with each slot described as Wikidata describes it.
+
+    Ground truth comes from Wikidata's statements and the step is shown
+    schema.org's words, and the two vocabularies disagree about what a slot
+    means. Wikidata's `creator` is "maker of this creative work (where no
+    more specific property exists)", which excludes a film that has a
+    director; schema.org's permits it. Its `contentLocation` is where the
+    narrative is set, not where the painting hangs.
+
+    So this is not a prompt variant. It asks whether the step was being given
+    one definition and graded against another.
+    """
+    import json
+
+    from oold_llm_bench.corpus.wikidata_schemaorg import CORPUS_PATH
+
+    path = CORPUS_PATH.parent / "wikidata_property_text.json"
+    described = json.loads(path.read_text(encoding="utf-8"))
+    return [task.model_copy(update={"property_text": described}) for task in _wikidata(per_class, schemas)]
+
+
 _CONTEXT_LADDER = (
     # Nothing at all, and no grammar either. The floor, and what says what the
     # catalogue is worth: never told a class name, the base model scores zero.
@@ -255,6 +277,18 @@ GRIDS: dict[str, Grid] = {
             workers=12,
             step="fillable",
             notes="Scores lower than step-fillable on five models of six. Run to read what the step quotes.",
+        ),
+        Grid(
+            name="step-fillable-wikidata",
+            summary="The same step, each slot described as the vocabulary the truth came from describes it",
+            conditions=_STEP_CONDITIONS,
+            tasks=_wikidata_own_words,
+            per_class=20,
+            dimensions=("fillable", "fillable:precision", "fillable:recall"),
+            needs_schemas=False,
+            workers=12,
+            step="fillable",
+            notes="Against step-fillable, which shows schema.org's words for the same slots.",
         ),
         Grid(
             name="step-extract",
