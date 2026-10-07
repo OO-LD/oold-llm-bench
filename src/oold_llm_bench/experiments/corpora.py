@@ -21,16 +21,65 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from oold_llm_bench.tasks.models import TaskRecord
 
-__all__ = ["DOCUMENTS_CACHE", "balance", "quantity_tasks", "wikidata_schemaorg_tasks"]
+__all__ = [
+    "DOCUMENTS",
+    "DOCUMENTS_CACHE",
+    "DOCUMENTS_REVISION",
+    "balance",
+    "documents_for",
+    "quantity_tasks",
+    "wikidata_schemaorg_tasks",
+]
+
+DOCUMENTS = "OO-LD/oold-wikidata-schemaorg-documents"
+DOCUMENTS_REVISION = "ed302be3d95fc21e2be21001f858b45b4d15c0b9"
+"""Pinned, so a published corpus is not swapped for Wikipedia drift one way
+and Hub drift the other. The per-lead sha256 would catch a changed document
+anyway; this makes the download reproducible rather than merely checked."""
+"""The leads the corpus cites, published under the licence they carry.
+
+Not shipped in this repository, which is Apache-2.0, because the text is
+CC BY-SA 4.0 and the two do not mix in one tree. Published as a dataset of
+its own with attribution instead, which is how a Wikipedia derivative is
+normally released.
+
+Published rather than re-fetched, because the corpus pins a rendering and not
+only a revision. A revision is retrievable: ``action=parse&oldid=`` returns
+the one asked for. The sha256 was taken over ``prop=extracts`` output, and
+that renderer only runs on the current text, so the lead as it was rendered
+then cannot be reproduced once the article moves on. A later corpus can hash
+something derivable from ``oldid`` and be drift-proof; this one carries its
+bytes instead.
+"""
 
 DOCUMENTS_CACHE = Path(".cache/wikidata_schemaorg/documents.json")
-"""Where the harvest leaves the page text, and the reason it is not shipped.
+"""Where a local harvest leaves the same text. Preferred when it is there, so
+a corpus being rebuilt is read from the rebuild and not from the Hub."""
 
-The truth was measured against exact bytes of a Wikipedia lead, and those
-bytes belong to their authors. The corpus table carries the ids and the
-sha256 of each; the text is fetched, checked against the hash, and never
-redistributed.
-"""
+
+def documents_for(path: Path | None = None) -> dict[str, str]:
+    """The leads, from a local cache if there is one and the Hub otherwise.
+
+    Every lead is checked against the sha256 the corpus recorded, wherever it
+    came from. A document that does not hash as recorded is a different
+    document wearing the same id, and scoring against it would score answers
+    against prose nobody measured.
+    """
+    from oold_llm_bench.corpus.wikidata_schemaorg import read_documents
+
+    local = path or DOCUMENTS_CACHE
+    if local.is_file():
+        return read_documents(local)
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as exc:
+        raise ImportError(
+            f"{local} is absent, so the leads come from the Hub: uv sync --extra corpora, "
+            f"or rebuild the cache with scripts/fetch_wikidata_documents.py"
+        ) from exc
+    return read_documents(
+        Path(hf_hub_download(DOCUMENTS, "documents.json", repo_type="dataset", revision=DOCUMENTS_REVISION))
+    )
 
 
 def balance(tasks: list[TaskRecord], per_class: int, classes: tuple[str, ...] = ()) -> list[TaskRecord]:
@@ -69,16 +118,8 @@ def quantity_tasks(schemas: Path, per_class: int, classes: tuple[str, ...] = ())
 def wikidata_schemaorg_tasks(per_class: int, documents: Path | None = None) -> list[TaskRecord]:
     """Wikidata-grounded schema.org entities, as tasks.
 
-    Raises with the command that produces the cache rather than with a
-    missing-file traceback, because the harvest is an hour of polite fetching
-    and a reader meeting this for the first time needs to know that.
+    The leads come from :func:`documents_for`, so a clone needs no harvest.
     """
-    from oold_llm_bench.corpus import load_entities, read_documents
+    from oold_llm_bench.corpus import load_entities
 
-    path = documents or DOCUMENTS_CACHE
-    if not path.exists():
-        raise FileNotFoundError(
-            f"{path} holds the page text this corpus is scored against, and it is not redistributable. "
-            "Produce it with: uv run python scripts/harvest_wikidata_schemaorg.py"
-        )
-    return balance(load_entities(read_documents(path)), per_class)
+    return balance(load_entities(documents_for(documents)), per_class)
