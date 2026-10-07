@@ -245,6 +245,18 @@ GRIDS: dict[str, Grid] = {
             notes="Handed the true classes and mentions, so a wrong plan cannot be blamed for it.",
         ),
         Grid(
+            name="step-fillable-evidence",
+            summary="The same step, made to quote the words it read each property from",
+            conditions=(replace(_STEP_CONDITIONS[0], property_evidence=True),),
+            tasks=_wikidata,
+            per_class=20,
+            dimensions=("fillable", "fillable:precision", "fillable:recall"),
+            needs_schemas=False,
+            workers=12,
+            step="fillable",
+            notes="Scores lower than step-fillable on five models of six. Run to read what the step quotes.",
+        ),
+        Grid(
             name="step-extract",
             summary="The entity itself, given the true plan and ids pinned to it",
             conditions=_STEP_CONDITIONS,

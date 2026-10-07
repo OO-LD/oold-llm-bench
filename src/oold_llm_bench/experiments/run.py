@@ -39,6 +39,7 @@ def run_grid(
     out: Path = Path("results"),
     workers: int | None = None,
     rungs: tuple[str, ...] = (),
+    reasoning: str | None = None,
     on_progress: Callable[[int, int], None] | None = None,
     agents: Callable[[Any], Any] | None = None,
 ) -> RunResult:
@@ -58,7 +59,15 @@ def run_grid(
     from oold_llm_bench.runner.preflight import preflight
 
     register_union_arms()
+    from dataclasses import replace as _replace
+
     grid = grid.select(rungs)
+    if reasoning is not None:
+        # Per provider, not per grid. Turning thinking off is sent as
+        # chat_template_kwargs: vLLM understands it and needs it, Azure
+        # rejects the parameter outright, and a grid that hardcodes either
+        # runs on one of them.
+        grid = _replace(grid, conditions=tuple(_replace(c, reasoning=reasoning) for c in grid.conditions))
     directory = resolve_module(QUANTITIES, schemas) if grid.needs_schemas else None
     tasks = grid.tasks(per_class if per_class is not None else grid.per_class, directory)
     entries = [entry_for(name) for name in models]

@@ -80,6 +80,12 @@ class Condition:
     whole 4,000-token budget reasoning and returns no answer at all, so the
     arm is unrunnable rather than slow."""
 
+    property_evidence: bool = False
+    """Whether the property step must quote the words it read each one from.
+
+    A condition rather than a default: requiring it lowers the score on five
+    models of six, and what a model writes there says what it thought it was
+    reading, so it is worth being able to ask."""
     plan_retry: bool = False
     """Whether a plan call that answered nothing is asked again.
 
@@ -155,6 +161,7 @@ class Condition:
             "orchestration": self.orchestration,
             "shortlist_k": self.shortlist_k,
             "plan_retry": self.plan_retry,
+            "property_evidence": self.property_evidence,
             "describe_catalogue": self.describe_catalogue,
             "pin_units": self.pin_units,
             "output_form": self.output_form,

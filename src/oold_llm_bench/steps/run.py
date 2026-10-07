@@ -80,7 +80,9 @@ def _fillable(agent: Any, cell: Cell, request: Any) -> StepOutcome:
     chosen = agent.fillable_properties(request, plan, log)
     return StepOutcome(
         step="fillable",
-        produced=chosen,
+        # The names are the answer; the raw reply is what the step thought it
+        # was reading, kept so a failure can be read rather than guessed at.
+        produced={"chosen": chosen, "answered": getattr(agent, "fillable_answer", None)},
         dimensions=score_fillable(cell.task, chosen),
         primary=Dimension.FILLABLE,
         calls=log,

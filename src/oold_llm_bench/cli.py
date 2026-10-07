@@ -39,6 +39,12 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--rungs", default="", help="comma-separated published names, default every rung")
     run.add_argument("--out", type=Path, default=Path("results"), help="where records are written")
     run.add_argument("--workers", type=int, default=None, help="concurrent calls, default the grid's own")
+    run.add_argument(
+        "--reasoning",
+        default=None,
+        choices=["off", "low", "medium", "high"],
+        help="thinking, where the provider understands it; vLLM does and Azure rejects the parameter",
+    )
     run.add_argument("--env", type=Path, default=None, help="a dotenv file, default one in the working directory")
 
     show = sub.add_parser("report", help="print the table for a finished run")
@@ -112,6 +118,7 @@ def _run(args: argparse.Namespace) -> int:
         out=args.out,
         workers=args.workers,
         rungs=rungs,
+        reasoning=args.reasoning,
         on_progress=_progress,
     )
     print(f"\n{result.run_id}: {result.cells} cells -> {result.records}")

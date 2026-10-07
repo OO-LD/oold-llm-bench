@@ -39,7 +39,7 @@ dependencies = [
 # result is only placeable if it names the library commit it was measured
 # against. A published run that said ">=1.0.3" would not.
 agent = [
-    "oold[agent] @ git+https://github.com/OO-LD/oold-python.git@58db032475c438f4bf5f420495a9a81197eb9e12",
+    "oold[agent] @ git+https://github.com/OO-LD/oold-python.git@7e1a657d3440f4278d668319f0dcb3813bc12870",
 ]
 # Fetching a schema corpus. Not a core dependency, because rescoring published
 # records needs the grader and nothing else.
