@@ -667,6 +667,14 @@ def load_entities(
         if describe_catalogue
         else None
     )
+    # schema.org's own comment per property, where the corpus carries one.
+    # Shown to the step that chooses between property names, which is a
+    # vocabulary question that no wording of the question answers.
+    described_properties = {
+        name: body["description"]
+        for name, body in (corpus.properties or {}).items()
+        if isinstance(body, dict) and body.get("description")
+    } or None
 
     chosen: list[GroundedEntity] = []
     taken: dict[str, int] = {}
@@ -711,6 +719,7 @@ def load_entities(
             ),
             catalogue=list(offered),
             catalogue_text=described,
+            property_text=described_properties,
             answer_schema=shape,
             branches=narrowed,
             class_parents=lineage,

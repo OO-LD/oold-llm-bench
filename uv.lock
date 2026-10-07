@@ -1895,7 +1895,7 @@ wheels = [
 [[package]]
 name = "oold"
 version = "1.0.3"
-source = { git = "https://github.com/OO-LD/oold-python.git?rev=97a37b1a56261732568a0bee75da160aa868d105#97a37b1a56261732568a0bee75da160aa868d105" }
+source = { git = "https://github.com/OO-LD/oold-python.git?rev=c93db821970fed95206e3d9a80dc5e9339acc3b4#c93db821970fed95206e3d9a80dc5e9339acc3b4" }
 dependencies = [
     { name = "datamodel-code-generator" },
     { name = "jsondiff" },
@@ -1964,7 +1964,7 @@ requires-dist = [
     { name = "langchain-anthropic", marker = "extra == 'providers'", specifier = ">=0.3" },
     { name = "langchain-mistralai", marker = "extra == 'providers'", specifier = ">=0.2" },
     { name = "langchain-openai", marker = "extra == 'providers'", specifier = ">=0.3" },
-    { name = "oold", extras = ["agent"], marker = "extra == 'agent'", git = "https://github.com/OO-LD/oold-python.git?rev=97a37b1a56261732568a0bee75da160aa868d105" },
+    { name = "oold", extras = ["agent"], marker = "extra == 'agent'", git = "https://github.com/OO-LD/oold-python.git?rev=c93db821970fed95206e3d9a80dc5e9339acc3b4" },
     { name = "oold-llm-bench", extras = ["agent", "providers"], marker = "extra == 'playground'" },
     { name = "panel", marker = "extra == 'playground'", specifier = ">=1.5" },
     { name = "panelini", marker = "extra == 'playground'", specifier = ">=1.0.1" },

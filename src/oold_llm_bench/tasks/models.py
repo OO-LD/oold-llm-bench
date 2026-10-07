@@ -180,6 +180,13 @@ class TaskRecord(BaseModel):
     class fits the range, so a link is constrained to a real target rather
     than to any string."""
 
+    property_text: dict[str, str] | None = None
+    """What each offered property name means, where the vocabulary says.
+
+    Read by the step that chooses between property names and by no other. A
+    bare name does not say whether the gallery holding a painting is its
+    ``contentLocation`` or its ``provider``, and that is a vocabulary
+    question rather than a reading one."""
     catalogue_text: dict[str, str] | None = None
     catalogue_enums: dict[str, str] | None = None
     """The same entries with the prose removed and the enumerations kept.

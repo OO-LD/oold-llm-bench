@@ -325,6 +325,7 @@ def build_request(cell: Cell) -> ExtractionRequest:
         branches=_branches_of(cell),
         parents=_parents_of(cell),
         ranges=_ranges_of(cell),
+        property_text=cell.task.property_text or None,
     )
 
 
