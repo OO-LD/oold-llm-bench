@@ -52,6 +52,13 @@ class Grid:
     needs_schemas: bool = True
     workers: int = 4
     notes: str = ""
+    step: str | None = None
+    """Which step of the pipeline this grid runs alone, or the whole arm.
+
+    A step grid hands the step the corpus's own answer for everything before
+    it, so what it scores is its own question. Named here rather than on the
+    condition, because it decides how a cell is run and not what the model is
+    asked."""
 
     def rungs(self) -> list[str]:
         """The published name of each condition, in declared order."""
@@ -166,6 +173,22 @@ _ENFORCEMENT_ABLATION = (
     ),
 )
 
+_STEP_CONDITIONS = (
+    # The class schema and the range enums bind whatever the prompt carries:
+    # presenting the catalogue is a condition on a step, knowing it is not.
+    # `reasoning` is left unset. Turning thinking off is a vLLM control sent
+    # as chat_template_kwargs, which Azure rejects outright, and a step grid
+    # should run wherever the model does.
+    Condition(
+        arm=UNION_ENFORCED_ARM,
+        catalogue_size=25,
+        signal="named",
+        describe_catalogue=True,
+        orchestration="multi_step",
+        shortlist_k=3,
+    ),
+)
+
 _SCHEMAORG_UNION = tuple(
     # pin_units is meaningless here: schema.org declares no unit slot, so
     # there is nothing for the enum to close. Left at the default and said
@@ -196,6 +219,42 @@ GRIDS: dict[str, Grid] = {
             conditions=_ENFORCEMENT_ABLATION,
             tasks=_quantity,
             per_class=30,
+        ),
+        Grid(
+            name="step-identify",
+            summary="Which entities a document holds, and what it calls them",
+            conditions=_STEP_CONDITIONS,
+            tasks=_wikidata,
+            per_class=20,
+            dimensions=("class", "mention", "entity:precision", "entity:recall"),
+            needs_schemas=False,
+            workers=12,
+            step="identify",
+            notes="Real text. The first step answers from the document and the catalogue alone.",
+        ),
+        Grid(
+            name="step-fillable",
+            summary="Which slots the document fills, given the true class",
+            conditions=_STEP_CONDITIONS,
+            tasks=_wikidata,
+            per_class=20,
+            dimensions=("fillable", "fillable:precision", "fillable:recall"),
+            needs_schemas=False,
+            workers=12,
+            step="fillable",
+            notes="Handed the true classes and mentions, so a wrong plan cannot be blamed for it.",
+        ),
+        Grid(
+            name="step-extract",
+            summary="The entity itself, given the true plan and ids pinned to it",
+            conditions=_STEP_CONDITIONS,
+            tasks=_wikidata,
+            per_class=20,
+            dimensions=("class", "property", "value"),
+            needs_schemas=False,
+            workers=12,
+            step="extract",
+            notes="Ids come from the plan and are pinned, so a link has a name to point at.",
         ),
         Grid(
             name="schemaorg-union",

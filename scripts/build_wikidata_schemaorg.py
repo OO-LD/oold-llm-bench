@@ -520,7 +520,16 @@ def build(  # noqa: C901 - one pass, one stated reason per branch
             found = candidates_of(body, properties, offered, lexicon, labels, statement_drops)
             label = body.get("label")
             if label:
-                found[NAME] = [(label, Kind.TEXT, (), None)]
+                # The article title counts as a form of the name. A lead names
+                # its subject under the title of the article it is the lead of,
+                # and Wikidata's label is often longer: "Telecom Business
+                # School" against "Institut Mines-Telecom Business School".
+                # Offering only the label drops `name` from the truth of an
+                # entity the document plainly names, and an extractor that
+                # answers the title is then marked wrong for being right.
+                title = article["title"]
+                forms = [title, title.split(" (")[0].strip()]
+                found[NAME] = [(label, Kind.TEXT, tuple(dict.fromkeys(forms)), None)]
             facts: dict[str, list[Any]] = {}
             edges: dict[str, list[str | None]] = {}
             distractors: dict[str, list[Any]] = {}

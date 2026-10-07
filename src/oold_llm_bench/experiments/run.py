@@ -90,6 +90,8 @@ def run_grid(
         if on_progress is not None:
             on_progress(done, config.size)
 
+    if grid.step is not None:
+        return _run_steps(grid, config, specs, entries, store, run_id, on_progress, agents)
     if agents is None:
         # Built here rather than taken as an argument by default, so the
         # normal path reads credentials once and names what is missing before
@@ -182,3 +184,95 @@ def _revision() -> str:
     except (OSError, subprocess.CalledProcessError):  # pragma: no cover - no git, or not a clone
         return "unknown"
     return out.stdout.strip()
+
+
+def _run_steps(
+    grid: Grid,
+    config: Any,
+    specs: list[Any],
+    entries: list[Any],
+    store: Any,
+    run_id: str,
+    on_progress: Callable[[int, int], None] | None,
+    agents: Callable[[Any], Any] | None,
+) -> RunResult:
+    """A grid where each cell is one step, run against oracle input.
+
+    Threaded over cells, because a step is one call and a provider that
+    accepts concurrency turns a grid from minutes into seconds. Outcomes are
+    written as they arrive rather than in declared order: a step cell carries
+    its own identity in the record, so nothing downstream depends on the
+    sequence, and one slow call cannot hold the rest behind it.
+
+    The store is written under a lock. It appends to two files and flushes per
+    record so a killed run keeps what it had, and two threads flushing into
+    one handle interleave the lines.
+    """
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from oold.agent.client import CallLog
+
+    from oold_llm_bench.clients import Credentials, client_factory
+    from oold_llm_bench.results.record import Environment, RunRecord, config_hash
+    from oold_llm_bench.runner import Cell, build_agent
+    from oold_llm_bench.runner.arms import register_union_arms
+    from oold_llm_bench.steps import run_step
+
+    register_union_arms()
+    if agents is None:
+        credentials = Credentials.from_env(transports=sorted({entry.transport for entry in entries}))
+        client_for = client_factory(credentials)
+        agents = lambda cell: build_agent(cell, client_for(cell))
+
+    environment = Environment(benchmark_version=_version(), benchmark_sha=_revision())
+    cells = [
+        Cell(condition=condition, model=spec, task=task, repetition=1)
+        for condition in config.conditions
+        for spec in specs
+        for task in config.tasks
+    ]
+    writing = threading.Lock()
+    counted = threading.Lock()
+    done = 0
+
+    def one(cell: Any) -> None:
+        nonlocal done
+        outcome = run_step(grid.step or "", cell, agents(cell))
+        with counted:
+            done += 1
+            seen = done
+        if on_progress is not None:
+            on_progress(seen, config.size)
+        if outcome.error is not None:
+            # Reported, not skipped. A grid that writes nothing and says
+            # nothing is indistinguishable from one that ran.
+            print(f"  {cell.task.id}: {outcome.error}", flush=True)
+            return
+        calls = outcome.calls if isinstance(outcome.calls, CallLog) else None
+        with writing:
+            store.append(
+                RunRecord(
+                    run_id=cell.key,
+                    arm=cell.condition.arm,
+                    model=cell.model,
+                    environment=environment,
+                    enforcement=cell.condition.describe() | {"step": grid.step},
+                    corpus_hash=cell.task.corpus.content_hash,
+                    catalogue_hash=config_hash(cell.task.catalogue or []),
+                    prompt_hash=config_hash(cell.task.document),
+                    split=cell.task.split.value,
+                    variant=cell.task.variant.value,
+                    repetition=1,
+                    scores=[outcome.describe()],
+                    calls=calls.describe() if calls is not None else {},
+                    document_chars=len(cell.task.document),
+                    notes=cell.task.notes,
+                    answer_payload=outcome.produced,
+                )
+            )
+
+    with ThreadPoolExecutor(max_workers=max(1, grid.workers)) as pool:
+        list(pool.map(one, cells))
+    store.write_summary({"run_id": run_id, "step": grid.step, "cells": config.size})
+    return RunResult(run_id=run_id, cells=config.size, records=store.local_path, published=store.published_path)

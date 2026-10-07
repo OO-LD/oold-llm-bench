@@ -6029,8 +6029,8 @@
   "stated": 49133,
   "rate": 0.4656,
   "published": {
-   "candidates": 7553,
-   "stated": 4449
+   "candidates": 7560,
+   "stated": 4470
   },
   "per_class": {
    "Airport": {
@@ -6303,13 +6303,12 @@
     ],
     "parentOrganization": [
      "Institut Mines-Télécom"
+    ],
+    "name": [
+     "Telecom Business School"
     ]
    },
-   "distractors": {
-    "name": [
-     "Institut Mines-Telecom Business School"
-    ]
-   }
+   "distractors": {}
   },
   {
    "qid": "Q2072655",
@@ -7116,6 +7115,9 @@
     ],
     "parentOrganization": [
      "Opus Dei"
+    ],
+    "name": [
+     "University of Navarra"
     ]
    },
    "distractors": {
@@ -7126,9 +7128,6 @@
     "memberOf": [
      "European University Association",
      "Coalition for Advancing Research Assessment"
-    ],
-    "name": [
-     "University of Navarre"
     ]
    }
   },
@@ -10180,13 +10179,12 @@
     ],
     "about": [
      "Albanian"
+    ],
+    "name": [
+     "Congress of Manastir"
     ]
    },
-   "distractors": {
-    "name": [
-     "Congress of Monastir"
-    ]
-   }
+   "distractors": {}
   },
   {
    "qid": "Q1194052",
@@ -14579,13 +14577,12 @@
     ],
     "contentLocation": [
      "Greece"
-    ]
-   },
-   "distractors": {
+    ],
     "name": [
      "Z"
     ]
-   }
+   },
+   "distractors": {}
   },
   {
    "qid": "Q274167",
@@ -19015,13 +19012,12 @@
     ],
     "founder": [
      "Paul Janssen"
+    ],
+    "name": [
+     "Janssen Pharmaceuticals"
     ]
    },
-   "distractors": {
-    "name": [
-     "Janssen Pharmaceutica"
-    ]
-   }
+   "distractors": {}
   },
   {
    "qid": "Q122741",
@@ -19040,6 +19036,9 @@
     ],
     "owns": [
      "Creative Assembly"
+    ],
+    "name": [
+     "Sega"
     ]
    },
    "distractors": {
@@ -19481,6 +19480,9 @@
     ],
     "owns": [
      "Foxconn Technology"
+    ],
+    "name": [
+     "Foxconn"
     ]
    },
    "distractors": {
@@ -19862,6 +19864,9 @@
     ],
     "parentOrganization": [
      "ManpowerGroup"
+    ],
+    "name": [
+     "ManpowerGroup"
     ]
    },
    "distractors": {
@@ -19872,9 +19877,6 @@
      "ManpowerGroup s.r.o.",
      "ManpowerGroup Sp. z o.o.",
      "ManpowerGroup Greater China Limited"
-    ],
-    "name": [
-     "Alpha Tomo Global Resoures Sdn Bhd"
     ]
    }
   },
@@ -20928,6 +20930,9 @@
     ],
     "owns": [
      "Magnavox"
+    ],
+    "name": [
+     "Philips"
     ]
    },
    "distractors": {
@@ -20948,9 +20953,6 @@
     ],
     "memberOf": [
      "Wi-Fi Alliance"
-    ],
-    "name": [
-     "Koninklijke Philips NV"
     ]
    }
   },
@@ -21817,14 +21819,14 @@
     ],
     "about": [
      "Horatii"
+    ],
+    "name": [
+     "Oath of the Horatii"
     ]
    },
    "distractors": {
     "provider": [
      "Department of Paintings of the Louvre"
-    ],
-    "name": [
-     "The Oath of the Horatii"
     ]
    }
   },
@@ -24554,6 +24556,9 @@
     ],
     "familyName": [
      "Schwarzenegger"
+    ],
+    "name": [
+     "Arnold Schwarzenegger"
     ]
    },
    "distractors": {
@@ -26580,6 +26585,9 @@
     ],
     "familyName": [
      "Grimaldi"
+    ],
+    "name": [
+     "Albert II of Monaco"
     ]
    },
    "distractors": {
@@ -26601,9 +26609,6 @@
     ],
     "owns": [
      "Château de Marchais"
-    ],
-    "name": [
-     "Albert II, Prince of Monaco"
     ]
    }
   },
@@ -26804,6 +26809,9 @@
     ],
     "familyName": [
      "de Borbón"
+    ],
+    "name": [
+     "Juan Carlos I"
     ]
    },
    "distractors": {
@@ -26820,9 +26828,6 @@
      "Académie des Sciences Morales et Politiques",
      "Club of Rome",
      "Juan Carlos I of Spain and Queen Sofía"
-    ],
-    "name": [
-     "Juan Carlos I of Spain"
     ]
    }
   },
@@ -26977,6 +26982,9 @@
     ],
     "nationality": [
      "Greece"
+    ],
+    "name": [
+     "Paisios of Mount Athos"
     ]
    },
    "distractors": {
@@ -26993,9 +27001,6 @@
     ],
     "givenName": [
      "Arsenio"
-    ],
-    "name": [
-     "Elder Paisios of Mount Athos"
     ]
    }
   },
@@ -27319,6 +27324,9 @@
     ],
     "givenName": [
      "Mykola"
+    ],
+    "name": [
+     "Mykola Khvylovy"
     ]
    },
    "distractors": {
@@ -27340,9 +27348,6 @@
     ],
     "memberOf": [
      "VAPLITE"
-    ],
-    "name": [
-     "Mykola Khvylovyi"
     ]
    }
   },
@@ -28119,6 +28124,9 @@
     ],
     "familyName": [
      "Einstein"
+    ],
+    "name": [
+     "Albert Einstein"
     ]
    },
    "distractors": {
@@ -28290,6 +28298,9 @@
     ],
     "givenName": [
      "Carl"
+    ],
+    "name": [
+     "Carl Linnaeus"
     ]
    },
    "distractors": {
@@ -28990,6 +29001,9 @@
     ],
     "endDate": [
      "2022-06-24"
+    ],
+    "name": [
+     "Man vs Bee"
     ]
    },
    "distractors": {
@@ -28998,9 +29012,6 @@
     ],
     "numberOfEpisodes": [
      9
-    ],
-    "name": [
-     "Man vs. Bee"
     ]
    }
   },
@@ -30579,6 +30590,9 @@
     ],
     "endDate": [
      "2015-06-20"
+    ],
+    "name": [
+     "The Producers"
     ]
    },
    "distractors": {
@@ -30587,9 +30601,6 @@
     ],
     "contentLocation": [
      "Seoul"
-    ],
-    "name": [
-     "Producer"
     ]
    }
   },
@@ -31943,6 +31954,9 @@
     ],
     "director": [
      "Trey Parker"
+    ],
+    "name": [
+     "South Park"
     ]
    },
    "distractors": {
@@ -34588,6 +34602,9 @@
     ],
     "director": [
      "David Cage"
+    ],
+    "name": [
+     "Detroit: Become Human"
     ]
    },
    "distractors": {

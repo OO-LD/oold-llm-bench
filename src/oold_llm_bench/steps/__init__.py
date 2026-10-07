@@ -28,12 +28,16 @@ from oold_llm_bench.steps.oracle import (
     plan_of,
     shortlist_of,
 )
+from oold_llm_bench.steps.run import STEPS, StepOutcome, run_step
 from oold_llm_bench.steps.score import score_fillable, score_identify
 
 __all__ = [
+    "STEPS",
+    "StepOutcome",
     "fillable_of",
     "mentions_of",
     "plan_of",
+    "run_step",
     "score_fillable",
     "score_identify",
     "shortlist_of",
