@@ -573,6 +573,27 @@ def stated_in(document: str, forms: tuple[str, ...]) -> str | None:
     return None
 
 
+def _mentions_of(entity: GroundedEntity, document: str) -> tuple[str, ...]:
+    """The words this document refers to the subject by.
+
+    The article title and whatever ``name`` the subject was filed under, kept
+    only where the document states them. Real text needs no model to supply
+    this: the corpus already grounds every fact by checking the lead states
+    some spelling of it, and the subject's own name is grounded the same way.
+
+    A parenthetical qualifier is dropped from the title. "Mercury (planet)"
+    disambiguates an encyclopaedia, and no lead refers to the subject that
+    way.
+    """
+    offered = [entity.title.split(" (")[0].strip(), entity.title]
+    offered += [str(value) for value in entity.facts.get(NAME, [])]
+    seen: list[str] = []
+    for name in offered:
+        if name and name not in seen and stated_in(document, (name,)) is not None:
+            seen.append(name)
+    return tuple(seen)
+
+
 def _check(entity: GroundedEntity, catalogue: Mapping[str, Any], documents: Mapping[str, str]) -> str | None:
     """What stopped one entity becoming a task, or ``None``."""
     offered = catalogue.get(entity.cls)
@@ -669,6 +690,7 @@ def load_entities(
                     fields={
                         prop: values[0] if len(values) == 1 else list(values) for prop, values in entity.facts.items()
                     },
+                    mentions=_mentions_of(entity, documents[entity.id]),
                 )
             ],
             corpus=CorpusRef(

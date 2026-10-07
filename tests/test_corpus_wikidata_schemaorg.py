@@ -898,3 +898,47 @@ class TestAgainstTheAdapter:
         assert request.document == tasks[0].document
         assert request.branches
         assert request.parents
+
+
+class TestWhatTheDocumentCallsTheSubject:
+    """Real text needs no model to say what an entity is referred to by.
+
+    The corpus already grounds every fact by checking the lead states some
+    spelling of it. The subject's own name is grounded the same way, so the
+    mention a step is scored against is derived rather than authored.
+    """
+
+    def test_a_mention_is_stated_by_the_document(self):
+        from oold_llm_bench.corpus.wikidata_schemaorg import _mentions_of, stated_in
+
+        entity = _entity(title="Kiel University", facts={"name": ["Kiel University"]})
+        document = "Kiel University is a university in Kiel, Germany."
+        for mention in _mentions_of(entity, document):
+            assert stated_in(document, (mention,)) is not None
+
+    def test_a_name_the_document_never_states_is_left_out(self):
+        from oold_llm_bench.corpus.wikidata_schemaorg import _mentions_of
+
+        entity = _entity(title="Kiel University", facts={"name": ["Christian-Albrechts-Universitat"]})
+        assert _mentions_of(entity, "Kiel University is a university.") == ("Kiel University",)
+
+    def test_a_disambiguating_qualifier_is_dropped(self):
+        """ "Mercury (planet)" disambiguates an encyclopaedia, and no lead
+        refers to the subject that way."""
+        from oold_llm_bench.corpus.wikidata_schemaorg import _mentions_of
+
+        assert _mentions_of(_entity(title="Mercury (planet)"), "Mercury is the smallest planet.") == ("Mercury",)
+
+
+def _entity(title: str, facts: dict | None = None):
+    from oold_llm_bench.corpus.wikidata_schemaorg import GroundedEntity
+
+    return GroundedEntity(
+        qid="Q1",
+        cls="CollegeOrUniversity",
+        title=title,
+        revision=1,
+        sha256="0" * 64,
+        facts=facts or {},
+        distractors={},
+    )
