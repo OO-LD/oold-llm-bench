@@ -412,6 +412,20 @@ def classes_of(corpus: GroundedCorpus) -> list[SchemaClass]:
     generated one are then offered the same surface, and a difference between
     them is a difference in the text and not in how the task was dressed.
     """
+    # A property the corpus has never once credited is not an option, it is a
+    # trap. `isbn`, `email`, `faxNumber`, `duns`, `leiCode` and six others are
+    # mapped, drawn and offered, and no lead in 959 states one: a step naming
+    # any of them is wrong by construction, and a precision measured over
+    # options that cannot be right measures the offer.
+    #
+    # Dropped globally rather than per class or per entity. Narrowing to what
+    # an entity happens to have a candidate for would tell the step which
+    # properties Wikidata holds for this subject, which is not something a
+    # reader of the document knows.
+    # Only a property the map holds and records as never stated is dropped.
+    # One the map does not mention at all has not been measured, and dropping
+    # an unmeasured slot would quietly shrink a catalogue nobody checked.
+    never = {name for name, body in (corpus.properties or {}).items() if not body.get("stated")}
     return [
         SchemaClass(
             name=name,
@@ -426,6 +440,7 @@ def classes_of(corpus: GroundedCorpus) -> list[SchemaClass]:
                     inherited=not slot[2],
                 )
                 for slot in entry.get("slots") or ()
+                if slot[0] not in never
             ),
         )
         for name, entry in sorted(corpus.catalogue.items())

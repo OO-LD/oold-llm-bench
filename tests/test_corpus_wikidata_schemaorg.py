@@ -942,3 +942,65 @@ def _entity(title: str, facts: dict | None = None):
         facts=facts or {},
         distractors={},
     )
+
+
+class TestAPropertyTheCorpusCannotCredit:
+    """An option that cannot be right is a trap, not a distractor.
+
+    `aggregateRating`, `email`, `faxNumber`, `hasCertification` and
+    `telephone` are mapped, drawn and offered, and no lead in 959 states one.
+    A precision measured over options that cannot be right measures the offer
+    rather than the step.
+    """
+
+    def test_a_property_never_stated_is_not_offered(self):
+        from oold_llm_bench.corpus.wikidata_schemaorg import classes_of, read_grounded_corpus
+
+        corpus = read_grounded_corpus()
+        never = {name for name, body in corpus.properties.items() if not body.get("stated")}
+        offered = {slot.name for cls in classes_of(corpus) for slot in cls.slots}
+        assert not (offered & never)
+
+    def test_a_property_the_map_never_measured_is_left_alone(self):
+        """Dropping an unmeasured slot would quietly shrink a catalogue
+        nobody checked."""
+        from oold_llm_bench.corpus.wikidata_schemaorg import classes_of
+
+        corpus = _corpus_with(slots=[["invented", "text", True]], properties={})
+        assert [slot.name for slot in classes_of(corpus)[0].slots] == ["invented"]
+
+    def test_narrowing_is_global_and_not_per_entity(self):
+        """Narrowing to what an entity has a candidate for would tell the step
+        which properties Wikidata holds for this subject, which is not
+        something a reader of the document knows."""
+        from oold_llm_bench.corpus.wikidata_schemaorg import classes_of, read_grounded_corpus
+
+        corpus = read_grounded_corpus()
+        movie = next(cls for cls in classes_of(corpus) if cls.name == "Movie")
+        names = {slot.name for slot in movie.slots}
+        drawn = {name for entity in corpus.entities if entity.cls == "Movie" for name in entity.facts}
+        assert names - drawn, "every offered slot is one this corpus happened to draw, which is a leak"
+
+
+def _corpus_with(slots: list, properties: dict):
+    from oold_llm_bench.corpus.wikidata_schemaorg import GroundedCorpus
+
+    return GroundedCorpus(
+        entities=(),
+        catalogue={"Thing": {"parents": [], "label": "Thing", "description": "", "slots": slots}},
+        properties=properties,
+        grounding={},
+        excluded={},
+        entities_in={},
+        resolved=0,
+        per_class={},
+        cap=0,
+        sources={},
+        licence="",
+        draw={},
+        controls={},
+        controls_per_class={},
+        guessable={},
+        built_at="2026-10-07",
+        retrieved_at_date="2026-10-07",
+    )
