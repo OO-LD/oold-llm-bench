@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v0.4.0 (2026-10-10)
+
+### Features
+
+- **corpus**: Require the written form of a lexical slot
+  ([`d029af7`](https://github.com/OO-LD/oold-llm-bench/commit/d029af7ff3daf004d85e7ab8efd2ab7ec23e4a83))
+
+- **grading**: Report a value named in more words, and compare dates
+  ([`6d9b5dd`](https://github.com/OO-LD/oold-llm-bench/commit/6d9b5dd588a82abce24cbd257604e079bf2f842a))
+
+
 ## v0.3.1 (2026-10-10)
 
 ### Bug Fixes
