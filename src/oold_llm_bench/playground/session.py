@@ -96,7 +96,7 @@ class Options:
     """The named class sets a pasted document is offered.
 
     The union of the sets, and never a count. Trimming to a number leaves the
-    answer in or out by accident, which is how "Andrea works at Siemens" came
+    answer in or out by accident, which is how "Andrea works at ExampleCorp" came
     to be shown 25 classes holding neither Person nor Organization."""
     catalogue_size: int | None = 25
     """How far a corpus task's own catalogue is trimmed.
@@ -190,6 +190,7 @@ class Outcome:
             f"{counts.get('links', 0)} links",
             f"{counts.get('dangling', 0)} dangling",
             f"{counts.get('self_loops', 0)} self-loops",
+            f"{counts.get('isolated', 0)} isolated",
         ]
         if self.primary is not None:
             parts.insert(0, f"F1 {self.primary:.3f}")
@@ -215,7 +216,13 @@ def run_once(cell: Cell, client: ChatClient, *, attempts: int = 1) -> Outcome:
 
     outcome.produced = read_answer(cell, outcome.result)
     links, dangling = links_of(outcome.result)
-    outcome.graph = build_graph(outcome.produced, links=links, dangling=dangling)
+    # Read off the result and not scored. The mention is what the plan step
+    # read the entity from, and it is the only designator there is for an
+    # entity whose property step declined `name`, which is the usual answer:
+    # a document saying "Jane works at ExampleCorp" does not state that Jane
+    # is named Jane. Empty for an orchestration with no plan step.
+    mentions = getattr(outcome.result, "mentions", None) or {}
+    outcome.graph = build_graph(outcome.produced, links=links, dangling=dangling, mentions=mentions)
 
     selected = getattr(outcome.result, "selected", None) or {}
     pooled = sorted({name for names in selected.values() for name in names})

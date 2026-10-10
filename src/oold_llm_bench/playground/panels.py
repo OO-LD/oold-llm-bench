@@ -16,7 +16,7 @@ testable without a provider and without Panel installed.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from oold_llm_bench.grading.score import TaskScore
@@ -25,8 +25,10 @@ __all__ = [
     "cost_rows",
     "cost_total",
     "degradation_rows",
+    "document_yaml",
     "schema_rows",
     "score_rows",
+    "session_call_rows",
     "validation_rows",
 ]
 
@@ -38,8 +40,29 @@ def score_rows(score: TaskScore) -> list[dict[str, Any]]:
     fixed order so two runs read the same way. Class, unit and shortlist are
     beside it rather than folded into it, because an arm can get every value
     right while assigning the wrong class and that is a different finding.
+
+    A ``_near`` dimension follows the strict one it widens rather than sitting
+    apart from it: it is the same question asked with a vocabulary- or
+    class-lineage-aware reading of what counts as a hit, and a reader checking
+    whether a miss was outright or merely under-specified wants the two
+    adjacent. Absent from ``score`` wherever the task carries no lineage or the
+    vocabulary carries no edge for the property, in which case the row is
+    skipped here exactly as every other dimension the task did not produce is.
     """
-    order = ["value", "entity", "class", "property", "unit", "unit_physical", "shortlist", "duplicate", "provenance"]
+    order = [
+        "value",
+        "value_near",
+        "entity",
+        "class",
+        "class_near",
+        "property",
+        "property_near",
+        "unit",
+        "unit_physical",
+        "shortlist",
+        "duplicate",
+        "provenance",
+    ]
     described = score.describe()["dimensions"]
     rows = []
     for name in order:
@@ -93,6 +116,37 @@ def cost_total(rows: Iterable[dict[str, Any]]) -> dict[str, int]:
         for key in total:
             total[key] += int(row.get(key, 0))
     return total
+
+
+def session_call_rows(calls: Any, *, turn: int) -> list[dict[str, Any]]:
+    """One row per call this turn made, tagged with the turn it belongs to.
+
+    :func:`cost_rows` pools a turn's calls into one line per step, which
+    answers what the turn spent; this keeps every call of its own, because a
+    session log is a history of what was asked and in what order, not a bill.
+    A caller accumulates these across turns, since a run only ever hands over
+    one turn's calls at a time.
+    """
+    if calls is None:
+        return []
+    return [{"turn": turn, **call.describe()} for call in calls]
+
+
+def document_yaml(entities: Iterable[Mapping[str, Any]]) -> str:
+    """The graph's entities as YAML, one document per entity.
+
+    Each entity is its node's own ``data``, the same dict the hover tooltip
+    already reads off, so this is a second rendering of what the graph already
+    holds and not a second extraction of it. ``---``-separated by
+    :func:`yaml.safe_dump_all`, so one entity can be read, copied or diffed
+    against the next without the brackets and quoting a JSON array would add.
+    """
+    import yaml
+
+    documents = [dict(entity) for entity in entities]
+    if not documents:
+        return ""
+    return yaml.safe_dump_all(documents, sort_keys=True, allow_unicode=True)
 
 
 def degradation_rows(degradation: Any) -> list[dict[str, Any]]:

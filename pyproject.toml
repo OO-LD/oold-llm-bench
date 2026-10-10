@@ -39,7 +39,7 @@ dependencies = [
 # result is only placeable if it names the library commit it was measured
 # against. A published run that said ">=1.0.3" would not.
 agent = [
-    "oold[agent] @ git+https://github.com/OO-LD/oold-python.git@7e1a657d3440f4278d668319f0dcb3813bc12870",
+    "oold[agent] @ git+https://github.com/OO-LD/oold-python.git@7dc528993577db9f4d3b3b856706592e4382ce4b",
 ]
 # Fetching a schema corpus. Not a core dependency, because rescoring published
 # records needs the grader and nothing else.
@@ -65,6 +65,10 @@ playground = [
     # the extra rather than in a dev group: nothing in CI runs it, and a
     # contributor who wants it wants the interface too.
     "pytest-playwright>=0.7",
+    # The documents panel renders the graph's entities as YAML. Already pulled
+    # in transitively through `oold`; declared directly because the import is
+    # this package's own.
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]

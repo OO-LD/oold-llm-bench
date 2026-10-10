@@ -2,8 +2,19 @@
 
 schema.org is the default and the one the graph view is designed around: it
 has a class hierarchy and object-valued properties, so a document can carry an
-edge and a picture of the answer is worth drawing. The quantity corpora have
-neither, and are offered beside it because they cost nothing to offer.
+edge and a picture of the answer is worth drawing. The quantity corpus has
+neither, and is offered beside it because it costs nothing to offer.
+
+Three more sources read real or semi-real documents rather than a generation:
+``wikidata-schemaorg`` is an encyclopaedia lead with Wikidata's claims as its
+ground truth, ``linked-articles`` is the same lead with a mention it makes of
+another entity in the same corpus, and ``sequence`` is a generated entity's
+own facts split across several documents, so the graph grows one real fold at
+a time instead of starting over on every task. All three are read-only here:
+they load a corpus built and cached elsewhere
+(:mod:`oold_llm_bench.corpus.wikidata_schemaorg`,
+:mod:`oold_llm_bench.corpus.linked_articles`,
+:mod:`oold_llm_bench.corpus.sequence`) and never write to it.
 
 The schema.org module is a generated artefact held outside this repository, so
 a fresh clone does not have it. Every entry point here therefore names the
@@ -45,11 +56,14 @@ __all__ = [
     "SchemaCorpus",
     "catalogue_sets",
     "is_scoreable",
+    "linked_articles_tasks",
     "load_schemaorg",
     "paste_task",
     "schemaorg_tasks",
     "schemas_directory",
+    "sequence_tasks",
     "wiki_tasks",
+    "wikidata_schemaorg_tasks",
 ]
 
 SCHEMAS_ENV = "OOLD_BENCH_SCHEMAS"
@@ -64,8 +78,17 @@ different generations of a corpus.
 ALL_CLASSES = "all"
 """The set offering every describable class, and the default for a paste."""
 
-CORPORA = ("schemaorg", "wiki-measurements")
+CORPORA = ("schemaorg", "wiki-measurements", "wikidata-schemaorg", "linked-articles", "sequence")
 """The task sources the playground offers, default first."""
+
+SEQUENCE_DOCUMENTS = 3
+"""Documents per drawn sequence, the module's own default.
+
+Named here rather than only passed along, because :func:`sequence_tasks`
+turns a count of *documents* in the task selector into a count of *sequences*
+to draw, and the two would drift apart silently if this were repeated as a
+literal at both call sites.
+"""
 
 MIN_OWN_SLOTS = 3
 """How many properties of its own a class needs to be worth describing.
@@ -201,6 +224,92 @@ def wiki_tasks(*, count: int = 12, split: Split = Split.DEV) -> list[TaskRecord]
     return tasks[:count]
 
 
+def wikidata_schemaorg_tasks(*, count: int = 12, split: Split = Split.DEV) -> list[TaskRecord]:
+    """Encyclopaedia leads, with Wikidata's claims as the ground truth.
+
+    The catalogue and the grounded facts are committed
+    (:mod:`oold_llm_bench.corpus.wikidata_schemaorg`); the leads themselves are
+    CC BY-SA 4.0 and are not, so they come from whichever of a local harvest or
+    the published Hub dataset :func:`~oold_llm_bench.experiments.corpora.documents_for`
+    finds first. Its own exception already names the two ways to obtain them,
+    so nothing here repeats that message.
+
+    Returned in the file's own order rather than balanced across classes the
+    way a grid run would: a playground task is picked by a person reading the
+    list, not drawn for a mean, and the first ``count`` is the simplest order
+    to explain.
+    """
+    from oold_llm_bench.corpus.wikidata_schemaorg import load_entities
+    from oold_llm_bench.experiments.corpora import documents_for
+
+    return load_entities(documents_for(), split=split)[:count]
+
+
+def linked_articles_tasks(*, count: int = 12, split: Split = Split.DEV) -> list[TaskRecord]:
+    """One source lead per task, with a link its text makes to another entity.
+
+    Reads the same leads :func:`wikidata_schemaorg_tasks` does, plus the
+    harvested wikilinks :mod:`oold_llm_bench.corpus.linked_articles` grounds
+    against them; both are checked against the catalogue's own hashes there,
+    not here. A source document carries no facts about its target beyond the
+    name the harvest kept, so the interesting read-out is whether the graph
+    draws the edge at all and not what it drew at the far end.
+    """
+    from oold_llm_bench.corpus.linked_articles import load_linked_articles
+    from oold_llm_bench.experiments.corpora import documents_for
+
+    return load_linked_articles(documents_for(), split=split)[:count]
+
+
+def sequence_tasks(
+    corpus: SchemaCorpus,
+    *,
+    count: int = 4,
+    seed: int = 1,
+    n_slots: int = 6,
+    n_documents: int = SEQUENCE_DOCUMENTS,
+    overlap: int = 1,
+    conflict_rate: float = 0.5,
+) -> list[TaskRecord]:
+    """One entity's facts, split across ``n_documents`` steps, ``count`` times.
+
+    Loading these in the order returned and submitting each is the corpus's
+    own natural use: :mod:`oold_llm_bench.corpus.sequence`'s module docstring
+    calls dedup and merge the two capabilities a single-document corpus has no
+    ground truth for, and a growing playground graph is exactly where both are
+    exercised one document at a time instead of inside a grader. ``conflict_rate``
+    defaults away from the generator's own ``0.0`` so a step through the
+    default offering has a contradiction to fold and not only an addition.
+
+    Drawn only from classes that declare a slot a sentence can name the entity
+    by (:func:`~oold_llm_bench.corpus.schemaorg.designating_slots`): without
+    one, nothing in a later document would read as being about the entity the
+    first one introduced, and :func:`~oold_llm_bench.corpus.sequence.draw_sequence`
+    refuses to draw such a class. A third of this corpus's describable classes
+    have no such slot, so the pool here is narrower than :attr:`SchemaCorpus.describable`.
+    """
+    from oold_llm_bench.corpus.sequence import generate_sequence, tasks_of
+
+    pool = [cls for cls in corpus.describable if so.designating_slots(cls)]
+    if not pool:
+        raise MissingSchemas(
+            "no describable class in this schema collection names its entries by a text slot, "
+            "so no sequence can be drawn"
+        )
+    tasks: list[TaskRecord] = []
+    for index in range(count):
+        item = generate_sequence(
+            pool,
+            seed=seed + index,
+            n_slots=n_slots,
+            n_documents=n_documents,
+            overlap=overlap,
+            conflict_rate=conflict_rate,
+        )
+        tasks += tasks_of(item, task_id=f"pg-sequence-{seed + index}")
+    return tasks
+
+
 NAME_SLOT = "name"
 """The property a pasted document names its entities by.
 
@@ -209,7 +318,7 @@ inherits it, and a document built from it would describe most classes with the
 same four properties, so the choice of class would stop mattering. The slot cap
 then cuts the inherited slots off entirely and no offered class carries it.
 
-A pasted sentence is not a generated one. It says "Andrea works at Siemens",
+A pasted sentence is not a generated one. It says "Andrea works at ExampleCorp",
 and a catalogue with nowhere to put "Andrea" pushed the model into
 ``additionalName`` on one run and ``address`` on the next. The label the graph
 draws and the value two turns are compared on both come from here, so the slot
@@ -234,13 +343,13 @@ def paste_task(
     around the classes an expectation names, which is right where the answer
     is known and impossible where the expectation is a placeholder. Trimming
     here on a fixed shuffle instead makes the offered list arbitrary: "Andrea
-    works at Siemens" is shown 25 classes holding neither Person nor
+    works at ExampleCorp" is shown 25 classes holding neither Person nor
     Organization, the plan picks Thing, which declares no links, so the edge
     cannot be expressed and the answer carries none.
 
     Several sets may be named and the catalogue is their union, because the
     sets are branches of Thing and a sentence rarely stays inside one.
-    "Andrea works at Siemens" needs Person and Organization, which are two
+    "Andrea works at ExampleCorp" needs Person and Organization, which are two
     branches, and `all` is the only single set holding both: 122 classes whose
     property union is an answer schema of several hundred slots that a small
     model fills with nulls.
@@ -327,7 +436,7 @@ def catalogue_sets(corpus: SchemaCorpus) -> dict[str, tuple[str, ...]]:
     """The named class sets a paste may be offered, largest first.
 
     A count is the wrong way to choose a catalogue. Twenty-five of 122 leaves
-    the answer in or out by accident, and "Andrea works at Siemens" was once
+    the answer in or out by accident, and "Andrea works at ExampleCorp" was once
     shown 25 classes holding neither Person nor Organization, so the plan
     picked Thing, which declares no links, and the edge had nowhere to go.
 

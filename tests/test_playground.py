@@ -23,21 +23,29 @@ from typing import Never
 
 import pytest
 
+from oold_llm_bench.corpus.linked_articles import LINKS_CACHE
+from oold_llm_bench.experiments.corpora import DOCUMENTS_CACHE
 from oold_llm_bench.extract import extract_json
-from oold_llm_bench.grading.triples import Quantity, Reference, TripleSet, make_triple
+from oold_llm_bench.grading.triples import Quantity, Reference, TripleSet, make_triple, normalise_property
 from oold_llm_bench.playground import (
     ALL_CLASSES,
     CLOSE_MATCH,
     CORPORA,
+    DEFER,
     DIFFERENT,
     EXACT_MATCH,
+    MERGE,
+    NO_ACTION,
     ORCHESTRATIONS,
     SCHEMAS_ENV,
     Comparable,
+    Decision,
     GraphState,
     MissingSchemas,
     Options,
+    Outcome,
     ReplayClient,
+    action_for,
     build_cell,
     build_graph,
     catalogue_sets,
@@ -46,6 +54,7 @@ from oold_llm_bench.playground import (
     coverage,
     decide,
     degradation_rows,
+    linked_articles_tasks,
     load_schemaorg,
     paste_task,
     run_once,
@@ -53,8 +62,10 @@ from oold_llm_bench.playground import (
     schemaorg_tasks,
     schemas_directory,
     score_rows,
+    sequence_tasks,
     validation_rows,
     wiki_tasks,
+    wikidata_schemaorg_tasks,
 )
 from oold_llm_bench.playground.app import STATE_STYLE, state_html
 from oold_llm_bench.playground.corpora import NAME_SLOT, is_scoreable
@@ -169,12 +180,56 @@ class TestGraph:
         assert graph.nodes["e1"].class_path == "Person"
         assert graph.nodes["e1"].kind == "entity"
 
-    def test_an_entity_the_answer_did_not_name_falls_back_to_its_class(self):
+    def test_an_entity_the_answer_did_not_name_falls_back_to_its_key(self):
+        """The key and not the class: two unnamed entities of one class
+        would otherwise share a label and read as one node, which is the
+        same confusion :func:`test_two_entities_of_one_class_are_two_nodes_reading_differently`
+        already fixed once for two *named* entities of one class."""
         graph = build_graph(linked_answer())
         assert sorted(graph.nodes) == ["e1", "e2"]
-        assert graph.nodes["e1"].label == "CreativeWork"
+        assert graph.nodes["e1"].label == "e1"
         assert graph.nodes["e1"].class_path == "CreativeWork"
         assert graph.nodes["e1"].kind == "entity"
+
+    def test_two_unnamed_entities_of_one_class_are_still_two_nodes_reading_differently(self):
+        answer = TripleSet(
+            triples=frozenset({
+                make_triple("e1", "address", "Rhoder Mickvale"),
+                make_triple("e2", "address", "Calder Wynn"),
+            }),
+            classes={"e1": "Organization", "e2": "Organization"},
+            provenance={},
+        )
+        graph = build_graph(answer)
+        assert sorted(node.label for node in graph.of_kind("entity")) == ["e1", "e2"]
+
+    def test_a_split_name_is_composed_for_the_label(self):
+        """Found live: a Person recorded as `givenName`/`familyName` and no
+        bare `name` fell back to the key, the same as an entity the answer
+        never named at all, even though this one the answer did name."""
+        answer = TripleSet(
+            triples=frozenset({
+                make_triple("e1", "givenName", "Indira"),
+                make_triple("e1", "familyName", "Gandhi"),
+            }),
+            classes={"e1": "Person"},
+            provenance={},
+        )
+        graph = build_graph(answer)
+        assert graph.nodes["e1"].label == "Indira Gandhi"
+
+    def test_a_bare_name_still_wins_over_a_split_one(self):
+        answer = TripleSet(
+            triples=frozenset({
+                make_triple("e1", "name", "Indira Gandhi"),
+                make_triple("e1", "givenName", "Indira"),
+                make_triple("e1", "familyName", "Gandhi"),
+            }),
+            classes={"e1": "Person"},
+            provenance={},
+        )
+        graph = build_graph(answer)
+        assert graph.nodes["e1"].label == "Indira Gandhi"
 
     def test_two_entities_of_one_class_are_two_nodes_reading_differently(self):
         """The label was the class, so an edge between two people read
@@ -253,6 +308,31 @@ class TestDanglingEdges:
         assert broken.of_kind("missing")[0].overlay() is not None
         assert resolved.nodes["e2"].overlay() is None
 
+    def test_a_later_turn_heals_the_placeholder_under_the_same_node(self):
+        """Found live: giving every fresh node a UUID on sight also gave a
+        `missing` placeholder one, so a later turn naming the same local key
+        could no longer find it under that key in `self.nodes`. The
+        placeholder was left stranded and the real entity drawn as a third,
+        unrelated node instead of healing the one already there."""
+        state = GraphState()
+        state.update(
+            build_graph(
+                triples(("e1", "abstract", "x")),
+                links=[FakeLink("e1", "publisherImprint", "e2")],
+                dangling=[FakeLink("e1", "publisherImprint", "e2")],
+            )
+        )
+        assert [n.id for n in state.nodes.values() if n.kind == "missing"] == ["e2"]
+
+        diff = state.update(build_graph(named_answer(("e2", "Organization", "Example Corp"))))
+        assert diff.resolved_placeholders == ["e2"]
+        # "e1" draws its own fresh id here, same as any other real entity;
+        # what this test is about is that "e2" healed in place rather than
+        # leaving the placeholder stranded and drawing a third, unrelated node.
+        assert len(state.nodes) == 2
+        assert state.nodes["e2"].kind == "entity"
+        assert state.nodes["e2"].label == "Example Corp"
+
     def test_a_link_the_agent_reports_does_not_double_the_edge(self):
         """The agent names the property as written, the extractor as normalised."""
         graph = build_graph(linked_answer(), links=[FakeLink("e1", "publisherImprint", "e2")])
@@ -266,7 +346,7 @@ class TestDanglingEdges:
         that was not there.
         """
         graph = build_graph(
-            named_answer(("e2", "Organization", "Siemens")),
+            named_answer(("e2", "Organization", "ExampleCorp")),
             links=[FakeLink("e1", "worksFor", "e2")],
         )
         assert [node.id for node in graph.of_kind("missing")] == ["e1"]
@@ -280,13 +360,15 @@ class TestDanglingEdges:
         state = GraphState()
         diff = state.update(
             build_graph(
-                named_answer(("e2", "Organization", "Siemens")),
+                named_answer(("e2", "Organization", "ExampleCorp")),
                 links=[FakeLink("e1", "worksFor", "e2")],
             )
         )
-        assert sorted(diff.created_nodes) == ["e1", "e2"]
-        assert state.describe()["dangling"] == ["e1|e2|works_for"]
-        assert [overlay["id"] for overlay in state.overlays()] == ["e1"]
+        missing = next(n.id for n in state.nodes.values() if n.kind == "missing")
+        siemens = next(n.id for n in state.nodes.values() if n.kind == "entity")
+        assert sorted(diff.created_nodes) == sorted([missing, siemens])
+        assert state.describe()["dangling"] == [f"{missing}|{siemens}|works_for"]
+        assert [overlay["id"] for overlay in state.overlays()] == [missing]
 
     def test_an_entity_typed_and_left_empty_is_drawn_and_not_invented_as_missing(self):
         """The other half of the same crash, read through the extractor.
@@ -299,15 +381,20 @@ class TestDanglingEdges:
         payload = {
             "entities": [
                 {"id": "e1", "type": "Person", "name": None},
-                {"id": "e2", "type": "Organization", "name": "Siemens", "employee": "e1"},
+                {"id": "e2", "type": "Organization", "name": "ExampleCorp", "employee": "e1"},
             ]
         }
         graph = build_graph(extract_json(payload), links=[FakeLink("e2", "employee", "e1")], show_classes=True)
         state = GraphState()
         state.update(graph)
         described = state.describe()
-        assert described["labels"] == {"e1": "Person", "e2": "Siemens"}
-        assert described["links"] == ["e2|e1|employee"]
+        person = next(n.id for n in state.nodes.values() if n.class_path == "Person")
+        siemens = next(n.id for n in state.nodes.values() if n.label == "ExampleCorp")
+        # Nothing named the person, so the label stands in: the class plus
+        # the graph's own node id, which is what tells one unnamed Person
+        # from the next.
+        assert described["labels"] == {person: f"Person {person}", siemens: "ExampleCorp"}
+        assert described["links"] == [f"{siemens}|{person}|employee"]
         assert described["dangling"] == []
         assert described["n_missing"] == 0
 
@@ -316,8 +403,59 @@ class TestDanglingEdges:
         payload = {"entities": [{"id": "e1", "type": "Person", "name": None}]}
         state = GraphState()
         state.update(build_graph(extract_json(payload), show_classes=True))
-        assert state.describe()["entities"] == ["e1"]
+        person = next(n.id for n in state.nodes.values() if n.kind == "entity")
+        assert state.describe()["entities"] == [person]
         assert state.describe()["classes"] == ["Person"]
+
+
+class TestIsolatedEntities:
+    """An entity the plan named and nothing turned out to be about.
+
+    The opposite failure from a dangling edge, and invisible without its own
+    count: the node is drawn, it carries a class and often a mention, and it
+    reads as a successful extraction until someone notices nothing reaches it.
+    """
+
+    def test_an_entity_no_edge_touches_is_counted(self):
+        payload = {
+            "entities": [
+                {"id": "e1", "type": "Person", "name": "Andrea", "homeLocation": "e2"},
+                {"id": "e2", "type": "Place", "name": "Berlin"},
+                {"id": "e3", "type": "PostalAddress", "streetAddress": "Hauptstrasse 1"},
+            ]
+        }
+        graph = build_graph(extract_json(payload))
+        assert graph.isolated == ["e3"]
+        assert graph.describe()["isolated"] == 1
+
+    def test_a_self_loop_does_not_keep_an_entity_off_the_list(self):
+        """It connects the entity to nothing, which is what isolation means."""
+        payload = {"entities": [{"id": "e1", "type": "Person", "knows": "e1"}]}
+        graph = build_graph(extract_json(payload), links=[FakeLink("e1", "knows", "e1")])
+        assert graph.describe()["self_loops"] == 1
+        assert graph.isolated == ["e1"]
+
+    def test_a_dangling_edge_connects_the_entity_that_asserted_it(self):
+        """The edge reaches nothing; the source still stated something."""
+        payload = {"entities": [{"id": "e1", "type": "Person", "worksFor": "e2"}]}
+        graph = build_graph(extract_json(payload), links=[FakeLink("e1", "worksFor", "e2")])
+        assert graph.describe()["dangling"] == 1
+        assert graph.isolated == []
+
+    def test_the_state_names_them_and_the_summary_counts_them(self):
+        payload = {
+            "entities": [
+                {"id": "e1", "type": "Person", "name": "Andrea", "homeLocation": "e2"},
+                {"id": "e2", "type": "Place", "name": "Berlin"},
+                {"id": "e3", "type": "PostalAddress", "streetAddress": "Hauptstrasse 1"},
+            ]
+        }
+        graph = build_graph(extract_json(payload))
+        state = GraphState()
+        state.update(graph)
+        alone = next(node.id for node in state.nodes.values() if node.class_path == "PostalAddress")
+        assert state.describe()["isolated"] == [alone]
+        assert "1 isolated" in Outcome(cell=None, graph=graph).summary()
 
 
 class TestSelfLoops:
@@ -329,17 +467,23 @@ class TestSelfLoops:
     """
 
     def test_an_edge_from_an_entity_to_itself_is_not_counted_as_a_link(self):
-        graph = build_graph(named_answer(("e2", "Organization", "Siemens")), links=[FakeLink("e2", "worksFor", "e2")])
+        graph = build_graph(
+            named_answer(("e2", "Organization", "ExampleCorp")), links=[FakeLink("e2", "worksFor", "e2")]
+        )
         assert graph.edges_of_kind("link") == []
         assert [e.label for e in graph.edges_of_kind("self")] == ["works_for"]
         assert graph.describe()["self_loops"] == 1
 
     def test_a_self_loop_does_not_invent_a_missing_node(self):
-        graph = build_graph(named_answer(("e2", "Organization", "Siemens")), links=[FakeLink("e2", "worksFor", "e2")])
+        graph = build_graph(
+            named_answer(("e2", "Organization", "ExampleCorp")), links=[FakeLink("e2", "worksFor", "e2")]
+        )
         assert graph.of_kind("missing") == []
 
     def test_a_self_loop_is_drawn_apart_from_a_resolved_link(self):
-        graph = build_graph(named_answer(("e2", "Organization", "Siemens")), links=[FakeLink("e2", "worksFor", "e2")])
+        graph = build_graph(
+            named_answer(("e2", "Organization", "ExampleCorp")), links=[FakeLink("e2", "worksFor", "e2")]
+        )
         assert graph.edges_of_kind("self")[0].action()["dashed"] is True
 
 
@@ -347,7 +491,7 @@ class TestParallelEdges:
     """Two edges between one pair of nodes have to be two lines on screen.
 
     ``multi_step`` states the relation both ways round, so "Andrea works at
-    Siemens" comes back as ``worksFor`` one way and ``employee`` the other.
+    ExampleCorp" comes back as ``worksFor`` one way and ``employee`` the other.
     Drawn on the renderer's default path those are one line carrying two
     labels on top of each other.
 
@@ -360,7 +504,7 @@ class TestParallelEdges:
         state = GraphState()
         state.update(
             build_graph(
-                named_answer(("e1", "Person", "Andrea"), ("e2", "Organization", "Siemens")),
+                named_answer(("e1", "Person", "Andrea"), ("e2", "Organization", "ExampleCorp")),
                 links=list(links),
             )
         )
@@ -382,15 +526,21 @@ class TestParallelEdges:
         one handedness applied to two opposite directions is two opposite
         sides of the same straight line.
         """
-        curves = self.curves(self.folded(FakeLink("e1", "worksFor", "e2"), FakeLink("e2", "employee", "e1")))
-        assert sorted(curves) == ["e1|e2|works_for", "e2|e1|employee"]
+        state = self.folded(FakeLink("e1", "worksFor", "e2"), FakeLink("e2", "employee", "e1"))
+        andrea = next(n.id for n in state.nodes.values() if n.label == "Andrea")
+        siemens = next(n.id for n in state.nodes.values() if n.label == "ExampleCorp")
+        curves = self.curves(state)
+        assert sorted(curves) == sorted([f"{andrea}|{siemens}|works_for", f"{siemens}|{andrea}|employee"])
         assert {curve["type"] for curve in curves.values()} == {"curvedCW"}
         assert {curve["roundness"] for curve in curves.values()} == {PARALLEL_ROUNDNESS}
 
     def test_two_edges_the_same_way_round_are_turned_against_each_other(self):
         """Here the directions agree, so the handedness has to differ instead."""
-        curves = self.curves(self.folded(FakeLink("e1", "worksFor", "e2"), FakeLink("e1", "memberOf", "e2")))
-        assert sorted(curves) == ["e1|e2|member_of", "e1|e2|works_for"]
+        state = self.folded(FakeLink("e1", "worksFor", "e2"), FakeLink("e1", "memberOf", "e2"))
+        andrea = next(n.id for n in state.nodes.values() if n.label == "Andrea")
+        siemens = next(n.id for n in state.nodes.values() if n.label == "ExampleCorp")
+        curves = self.curves(state)
+        assert sorted(curves) == sorted([f"{andrea}|{siemens}|member_of", f"{andrea}|{siemens}|works_for"])
         assert {curve["type"] for curve in curves.values()} == {"curvedCW", "curvedCCW"}
 
     def test_a_third_edge_between_one_pair_is_bent_further_out(self):
@@ -411,8 +561,9 @@ class TestParallelEdges:
         """A loop is not a curve between two points, so roundness does nothing
         to it and the renderer's own angle is what separates two."""
         state = self.folded(FakeLink("e2", "worksFor", "e2"), FakeLink("e2", "employee", "e2"))
+        siemens = next(n.id for n in state.nodes.values() if n.label == "ExampleCorp")
         angles = {overlay["id"]: overlay["selfReference"]["angle"] for overlay in state.edge_overlays()}
-        assert sorted(angles) == ["e2|e2|employee", "e2|e2|works_for"]
+        assert sorted(angles) == sorted([f"{siemens}|{siemens}|employee", f"{siemens}|{siemens}|works_for"])
         assert len(set(angles.values())) == 2
         assert set(angles.values()) == {math.pi / 4, math.pi / 4 + SELF_ANGLE}
 
@@ -430,31 +581,36 @@ class TestGraphState:
     def test_the_first_answer_is_all_additions(self):
         state = GraphState()
         diff = state.update(build_graph(linked_answer()))
-        assert sorted(diff.created_nodes) == ["e1", "e2"]
+        assert sorted(diff.created_nodes) == sorted(state.nodes)
+        assert len(diff.created_nodes) == 2
         assert len(diff.created_edges) == 1
         assert [a["action"] for a in diff.actions].count("addNode") == 2
 
     def test_an_unchanged_node_is_stored_rather_than_re_added(self):
         state = GraphState()
         state.update(build_graph(linked_answer()))
+        ids = sorted(state.nodes)
         diff = state.update(build_graph(linked_answer()))
         assert diff.created_nodes == []
         assert diff.updated_nodes == []
-        assert sorted(diff.stored_nodes) == ["e1", "e2"]
+        assert sorted(diff.stored_nodes) == ids
 
     def test_a_second_answer_adds_to_the_first(self):
         state = GraphState()
         state.update(build_graph(triples(("e1", "abstract", "x"))))
+        first_id = next(iter(state.nodes))
         diff = state.update(build_graph(triples(("e3", "name", "y"))))
-        assert diff.created_nodes == ["e3"]
-        assert state.describe()["entities"] == ["e1", "e3"]
+        assert len(diff.created_nodes) == 1
+        assert state.describe()["entities"] == sorted([first_id, diff.created_nodes[0]])
 
     def test_the_state_read_out_names_the_entities_and_the_edges(self):
         state = GraphState()
         state.update(build_graph(linked_answer()))
         described = state.describe()
-        assert described["entities"] == ["e1", "e2"]
-        assert described["links"] == ["e1|e2|publisher_imprint"]
+        creative_work = next(n.id for n in state.nodes.values() if n.class_path == "CreativeWork")
+        organization = next(n.id for n in state.nodes.values() if n.class_path == "Organization")
+        assert described["entities"] == sorted([creative_work, organization])
+        assert described["links"] == [f"{creative_work}|{organization}|publisher_imprint"]
         assert described["dangling"] == []
 
     def test_a_missing_node_carries_an_overlay_the_flat_format_cannot(self):
@@ -466,7 +622,8 @@ class TestGraphState:
                 dangling=[FakeLink("e1", "p", "ghost")],
             )
         )
-        assert [o["id"] for o in state.overlays()] == ["ghost"]
+        missing = next(n.id for n in state.nodes.values() if n.kind == "missing")
+        assert [o["id"] for o in state.overlays()] == [missing]
 
 
 class TestTheStateReadOut:
@@ -492,9 +649,12 @@ class TestTheStateReadOut:
     def test_the_payload_still_reads_back_as_the_state(self):
         """What the end-to-end test does with it, and the reason the JSON
         stays inside the element rather than moving to a widget."""
-        payload = json.loads(self.read(self.folded()))
-        assert payload["entities"] == ["e1", "e2"]
-        assert payload["links"] == ["e1|e2|publisher_imprint"]
+        state = self.folded()
+        payload = json.loads(self.read(state))
+        creative_work = next(n.id for n in state.nodes.values() if n.class_path == "CreativeWork")
+        organization = next(n.id for n in state.nodes.values() if n.class_path == "Organization")
+        assert payload["entities"] == sorted([creative_work, organization])
+        assert payload["links"] == [f"{creative_work}|{organization}|publisher_imprint"]
 
     def test_the_payload_is_indented_rather_than_one_line(self):
         body = self.read(GraphState())
@@ -545,22 +705,28 @@ class TestIdentityDecision:
         assert (decision.outcome, decision.route, decision.judge) == (EXACT_MATCH, "agreement", None)
         assert judge.asked == []
 
-    def test_one_side_carrying_more_is_asked_rather_than_merged(self):
-        """A superset is a judgement, and the cheap route must be the safe one.
+    def test_one_side_carrying_more_merges_free_on_a_name_resolver_trusts(self):
+        """`Resolver`'s name-similarity tier settles this without a call.
 
-        A merge cannot be undone from the interface, so agreement fires only
-        where there is nothing to decide. Whether an organisation named
-        Example Corp with an address is the Example Corp without one is a real
-        question, and it goes to whoever can answer it.
+        A superset used to be asked about unconditionally: a merge cannot be
+        undone from the interface, so the playground's own agreement rule
+        required every property to agree, not only the shared ones. Unified
+        onto `Resolver`, an identical, informative name is enough on its own,
+        the same trust it extends to two Wikidata items carrying different
+        statement counts; a disagreeing property no longer holds that back
+        (see `test_a_disagreement_goes_to_the_judge_and_names_the_conflict`
+        for where it still does: a name similar but not identical does not
+        reach this tier). A reader who wants the old caution back for an
+        `exactMatch` has `action_for`'s `auto_merge_exact_match` for it.
         """
-        judge = StubJudge({}, name="asked")
+        judge = StubJudge({}, name="unused")
         decision = decide(
             self.entity("a", "Organization", name="Example Corp"),
             self.entity("b", "Organization", name="Example Corp", address="Berlin"),
             judge,
         )
-        assert decision.route == "judge"
-        assert judge.asked
+        assert (decision.outcome, decision.route) == (EXACT_MATCH, "agreement")
+        assert judge.asked == []
 
     def test_one_agreeing_property_no_longer_merges_two_people(self):
         """The case the old rule got wrong, kept as the reason for the new one.
@@ -635,6 +801,28 @@ class TestIdentityDecision:
         assert coverage([deferred]) == 0.0
         assert coverage([settled]) == 1.0
         assert coverage([deferred, settled]) == 0.5
+
+
+class TestAction:
+    """What a session does with a decision, apart from the decision itself."""
+
+    def decision(self, outcome: str) -> Decision:
+        return Decision(left="a", right="b", outcome=outcome, route="agreement", evidence="")
+
+    def test_an_exact_match_merges_by_default(self):
+        assert action_for(self.decision(EXACT_MATCH)) == MERGE
+
+    def test_an_exact_match_is_only_deferred_with_the_toggle_off(self):
+        assert action_for(self.decision(EXACT_MATCH), auto_merge_exact_match=False) == DEFER
+
+    def test_a_close_match_defers_whichever_way_the_toggle_is_set(self):
+        """The toggle only ever changes what happens to a confident answer."""
+        assert action_for(self.decision(CLOSE_MATCH)) == DEFER
+        assert action_for(self.decision(CLOSE_MATCH), auto_merge_exact_match=False) == DEFER
+
+    def test_different_draws_nothing_whichever_way_the_toggle_is_set(self):
+        assert action_for(self.decision(DIFFERENT)) == NO_ACTION
+        assert action_for(self.decision(DIFFERENT), auto_merge_exact_match=False) == NO_ACTION
 
 
 def turn(*rows: tuple[str, str, str], link: tuple[str, str, str] | None = None):
@@ -714,6 +902,7 @@ class TestTwoTurnsGrowOneGraph:
     def test_a_merge_records_the_conflict_rather_than_taking_the_newer_value(self):
         state, _ = self.judged({("Example Corp", "Example Corp"): EXACT_MATCH})
         state.update(turn(("e2", "Organization", "Example Corp")))
+        corp_id = next(iter(state.nodes))
         second = TripleSet(
             triples=frozenset({
                 make_triple("e2", "name", "Example Corp"),
@@ -734,8 +923,8 @@ class TestTwoTurnsGrowOneGraph:
         state.update(build_graph(third))
         described = state.describe()
         assert len(described["entities"]) == 1
-        assert described["conflicts"] == {"e2": ["address"]}
-        node = state.nodes["e2"]
+        assert described["conflicts"] == {corp_id: ["address"]}
+        node = state.nodes[corp_id]
         assert node.data["address"] == "Berlin"
         assert node.data["address (conflict)"] == "Munich"
 
@@ -767,8 +956,9 @@ class TestTwoTurnsGrowOneGraph:
         state, judge = self.judged({})
         state.update(turn(ALICE))
         state.update(turn(CORP))
-        crossed = [d for d in state.ledger.decisions if {d.left, d.right} == {"e1", "e2"}]
-        assert [(d.outcome, d.route) for d in crossed] == [(DIFFERENT, "agreement")]
+        # Alice is placed with nothing yet drawn to compare against, so the
+        # only comparison the ledger ever makes is Example Corp against her.
+        assert [(d.outcome, d.route) for d in state.ledger.decisions] == [(DIFFERENT, "agreement")]
         assert judge.asked == []
 
     def test_coverage_falls_when_a_judge_defers(self):
@@ -794,6 +984,24 @@ class TestTwoTurnsGrowOneGraph:
         assert described["identity"]["counts"]["judge"] == 0
         assert described["identity"]["coverage"] == 0.0
 
+    def test_auto_merge_off_leaves_an_exact_match_as_a_deferred_edge(self):
+        """The toggle, not the decision, decides whether this folds.
+
+        The identical organisation still settles free, by agreement: what
+        changes is what the graph does about it. Off, it is drawn exactly the
+        way an unsure ``closeMatch`` already is, for a person to confirm,
+        rather than folded into one node on sight.
+        """
+        judge = StubJudge({("Bob", "Alice"): DIFFERENT})
+        state = GraphState(judge=judge, auto_merge_exact_match=False)
+        state.update(turn(ALICE, CORP, link=("e1", "worksFor", "e2")))
+        state.update(turn(BOB, CORP, link=("e1", "worksFor", "e2")))
+        described = state.describe()
+        assert len(described["entities"]) == 4
+        merges = [d for d in state.ledger.decisions if d.merges]
+        assert [(d.outcome, d.route) for d in merges] == [(EXACT_MATCH, "agreement")]
+        assert len(described["close_matches"]) == 1
+
 
 class TestReadOuts:
     def test_the_score_panel_reports_every_dimension_primary_first(self):
@@ -809,6 +1017,70 @@ class TestReadOuts:
         assert rows[0]["dimension"] == "value"
         assert rows[0]["f1"] == 1.0
         assert {row["dimension"] for row in rows} >= {"value", "entity", "class", "unit"}
+
+    def test_the_near_dimensions_follow_the_strict_ones_they_widen(self):
+        """A value read correctly but filed under a vocabulary-adjacent name,
+        or a class answered one step from the expected one, is a different
+        finding from a miss, and the score panel used to drop it:
+        `score_task` reports it under `value_near`/`property_near`/
+        `class_near`, and the fixed `order` list named only the strict three.
+        """
+        from oold_llm_bench.grading.score import score_task
+        from oold_llm_bench.grading.vocabulary import PropertyHierarchy
+
+        def instance(class_path: str, **fields) -> ExpectedInstance:
+            return ExpectedInstance(key="p1", class_path=class_path, fields=fields)
+
+        def task(exp: ExpectedInstance, class_parents=None) -> TaskRecord:
+            return TaskRecord(
+                id="t-near",
+                document="Jane Doe wrote it.",
+                expected=[exp],
+                corpus=CorpusRef(source=Source.SYNTHETIC, document_id="t-near", content_hash="0" * 64),
+                split=Split.DEV,
+                class_parents=class_parents,
+            )
+
+        def produced(class_path: str, **fields) -> TripleSet:
+            return TripleSet(
+                triples=frozenset(make_triple("a", prop, value) for prop, value in fields.items()),
+                classes={"a": class_path},
+                provenance={},
+            )
+
+        # Same class both sides, so alignment pairs the two entities on the
+        # class-agreement bonus alone; the property name is the thing the
+        # vocabulary has to recover.
+        vocabulary = PropertyHierarchy(parents={"author": frozenset({"creator"}), "creator": frozenset()})
+        value_result = score_rows(
+            score_task(
+                task(instance("Person", author="Jane Doe")),
+                produced("Person", creator="Jane Doe"),
+                vocabulary=vocabulary,
+            )
+        )
+        value_rows = {row["dimension"]: row for row in value_result}
+        assert value_rows["value_near"]["f1"] == pytest.approx(1.0)
+        assert value_rows["property_near"]["f1"] == pytest.approx(1.0)
+        assert value_rows["value"]["f1"] == 0.0
+
+        # Same property both sides, differing-but-related classes, so the
+        # lineage is what forgives the mismatch and not the vocabulary.
+        class_result = score_rows(
+            score_task(
+                task(instance("Actor", name="Jane Doe"), class_parents={"Actor": ["Person"]}),
+                produced("Person", name="Jane Doe"),
+            )
+        )
+        class_rows = {row["dimension"]: row for row in class_result}
+        assert class_rows["class_near"]["f1"] == pytest.approx(1.0)
+        assert class_rows["class"]["f1"] == 0.0
+
+        value_names = [row["dimension"] for row in value_result]
+        class_names = [row["dimension"] for row in class_result]
+        assert value_names.index("value_near") == value_names.index("value") + 1
+        assert value_names.index("property_near") == value_names.index("property") + 1
+        assert class_names.index("class_near") == class_names.index("class") + 1
 
     def test_a_wrong_answer_scores_below_a_right_one(self):
         from oold_llm_bench.grading.score import score_task
@@ -848,6 +1120,31 @@ class TestReadOuts:
             "total_tokens": 0,
             "errors": 0,
         }
+
+    def test_the_call_log_tags_every_call_with_its_turn_and_keeps_them_apart(self):
+        """Unlike the cost panel, which pools a turn's calls, a session log
+        keeps one row per call so a reader can scroll back through the order
+        they were made in."""
+        from oold.agent.client import CallLog, TokenUsage
+
+        from oold_llm_bench.playground.panels import session_call_rows
+
+        log = CallLog()
+        with log.timed("fill", "m") as sink:
+            sink.append(TokenUsage(input_tokens=1, output_tokens=1))
+        rows = session_call_rows(log, turn=3)
+        assert [row["turn"] for row in rows] == [3]
+        assert rows[0]["step"] == "fill"
+        assert session_call_rows(None, turn=1) == []
+
+    def test_the_documents_panel_is_one_yaml_document_per_entity(self):
+        from oold_llm_bench.playground.panels import document_yaml
+
+        text = document_yaml([{"id": "e1", "type": "Person", "name": "Alice"}, {"id": "e2", "name": "Bob"}])
+        assert text.count("---") == 1
+        assert "name: Alice" in text
+        assert "name: Bob" in text
+        assert document_yaml([]) == ""
 
     def test_the_schema_panel_names_the_catalogue_trim_and_the_provider_cap(self):
         from oold.agent.provider import profile_for
@@ -1041,12 +1338,133 @@ class TestCorpora:
         assert all(task.expected[0].fields["value"].unit for task in tasks)
         assert is_scoreable(tasks[0])
 
+    def test_every_corpus_this_test_file_knows_about_is_offered(self):
+        assert set(CORPORA) >= {
+            "schemaorg",
+            "wiki-measurements",
+            "wikidata-schemaorg",
+            "linked-articles",
+            "sequence",
+        }
+
 
 SCHEMAS = os.environ.get(SCHEMAS_ENV)
 needs_schemaorg = pytest.mark.skipif(
     not (SCHEMAS and Path(SCHEMAS).is_dir()),
     reason=f"set {SCHEMAS_ENV} to the generated schema.org module",
 )
+
+needs_wikidata_documents = pytest.mark.skipif(
+    not DOCUMENTS_CACHE.is_file(),
+    reason=f"needs {DOCUMENTS_CACHE}: scripts/fetch_wikidata_documents.py, or uv sync --extra corpora for the Hub",
+)
+
+needs_wikidata_links = pytest.mark.skipif(
+    not LINKS_CACHE.is_file(),
+    reason=f"needs {LINKS_CACHE}: scripts/harvest_wikidata_links.py",
+)
+
+
+@needs_wikidata_documents
+class TestWikidataSchemaorgCorpus:
+    """The harvested Wikidata-schema.org corpus, offered as a playground source."""
+
+    def test_the_tasks_are_grounded_and_scoreable(self):
+        tasks = wikidata_schemaorg_tasks(count=5)
+        assert len(tasks) == 5
+        assert all(task.id.startswith("wds-") for task in tasks)
+        assert all(is_scoreable(task) for task in tasks)
+        # Real prose and not a generation: the document is not written from
+        # the expectation the way every other corpus here writes its own.
+        assert all(len(task.document) > 20 for task in tasks)
+
+    def test_the_count_is_a_prefix_and_not_a_sample(self):
+        """Two callers asking for the same count see the same tasks."""
+        assert [t.id for t in wikidata_schemaorg_tasks(count=4)] == [t.id for t in wikidata_schemaorg_tasks(count=8)][
+            :4
+        ]
+
+
+@needs_wikidata_links
+class TestLinkedArticlesCorpus:
+    """A source lead and a link its text makes to another entity in the corpus."""
+
+    def test_a_task_carries_the_link_as_a_reference_to_a_named_target(self):
+        from oold_llm_bench.corpus.linked_articles import LINK_PROPERTY
+
+        tasks = linked_articles_tasks(count=5)
+        assert len(tasks) == 5
+        for task in tasks:
+            source = task.expected[0]
+            links = source.fields.get(LINK_PROPERTY)
+            assert links and all(isinstance(v, Reference) for v in links), (
+                f"{task.id}'s source names no {LINK_PROPERTY} reference"
+            )
+            targets = {instance.key for instance in task.expected[1:]}
+            assert {ref.key for ref in links} <= targets, f"{task.id} points past its own target stubs"
+
+    def test_the_linked_answer_resolves_rather_than_dangles(self):
+        """Replaying ground truth draws both ends and the edge between them:
+        this is what "a cross-document link resolved" looks like without a
+        live model, because the replay client answers from the same
+        `expected` the target's own stub is filed under."""
+        task = linked_articles_tasks(count=1)[0]
+        options = Options(orchestration="segmented", model="gpt-5-mini")
+        outcome = run_once(build_cell(task, options), ReplayClient(task))
+        assert outcome.error is None
+        assert drawn(outcome)["dangling"] == 0
+        assert drawn(outcome)["links"] >= 1
+
+
+@needs_schemaorg
+class TestSequenceCorpus:
+    """One entity's facts split across documents, the natural step-through."""
+
+    def test_a_sequence_is_offered_as_one_task_per_step_in_order(self):
+        corpus = load_schemaorg()
+        tasks = sequence_tasks(corpus, count=1, seed=5, n_documents=3)
+        assert [t.id for t in tasks] == ["pg-sequence-5-seq0", "pg-sequence-5-seq1", "pg-sequence-5-seq2"]
+        # One class throughout: every step is the same entity, so the
+        # catalogue offered at each step has to agree or the picture would
+        # show one node changing type mid-sequence.
+        assert len({(t.catalogue or [])[0] for t in tasks}) == 1
+        assert all(is_scoreable(t) for t in tasks)
+
+    def test_stepping_through_a_sequence_grows_one_graph_and_asks_identity(self):
+        """Folding step after step is the corpus's own use case, and the
+        corpus's own truth is that the three steps are one entity.
+
+        Every step refers to it by the same designator and states a different
+        subset of its properties, so each one agrees with what is already
+        drawn and the split document reassembles into the node it came from.
+        Agreement decides it, so no judge is asked and none is needed.
+        """
+        corpus = load_schemaorg()
+        tasks = sequence_tasks(corpus, count=1, seed=5, n_documents=3)
+        options = Options(orchestration="segmented", model="gpt-5-mini", catalogue_size=None)
+        state = GraphState()
+        for task in tasks:
+            outcome = run_once(build_cell(task, options), ReplayClient(task))
+            assert outcome.graph is not None
+            state.update(outcome.graph)
+        described = state.describe()
+        assert described["turns"] == 3
+        assert len(described["entities"]) == 1
+        assert described["conflicts"] == {}
+        identity = described["identity"]
+        assert identity["counts"] == {
+            "skos:exactMatch": 2,
+            "skos:closeMatch": 0,
+            "different": 0,
+            "agreement": 2,
+            "judge": 0,
+        }
+        assert identity["coverage"] == 1.0
+        # Reassembled and not merely deduplicated: a fold that kept one step
+        # and dropped the others would also leave one node.
+        node = state.nodes[described["entities"][0]]
+        split = {normalise_property(prop) for task in tasks for instance in task.expected for prop in instance.fields}
+        assert split <= set(node.data), f"the fold lost {sorted(split - set(node.data))}"
 
 
 @needs_schemaorg
@@ -1086,7 +1504,7 @@ class TestSchemaOrgCorpus:
 class TestAPastedDocumentChoosesANamedSet:
     """A count is the wrong way to choose a catalogue.
 
-    "Andrea works at Siemens" was shown 25 classes of 122, holding neither
+    "Andrea works at ExampleCorp" was shown 25 classes of 122, holding neither
     Person nor Organization. Thing was the only one that fitted, Thing declares
     no links, so the plan shortlisted it for both entities, they shared one
     fill call, and the edge had no slot to go in. The model was right and the
@@ -1099,17 +1517,17 @@ class TestAPastedDocumentChoosesANamedSet:
 
     def test_every_describable_class_is_offered_by_default(self):
         corpus = load_schemaorg()
-        task = paste_task(corpus, "Andrea works at Siemens")
+        task = paste_task(corpus, "Andrea works at ExampleCorp")
         assert set(task.catalogue or ()) == set(corpus.catalogue)
 
     def test_the_classes_a_reader_would_pick_are_there(self):
         corpus = load_schemaorg()
-        offered = set(paste_task(corpus, "Andrea works at Siemens").catalogue or ())
+        offered = set(paste_task(corpus, "Andrea works at ExampleCorp").catalogue or ())
         assert {"Person", "Organization"} <= offered
 
     def test_a_named_set_narrows_to_its_branch(self):
         corpus = load_schemaorg()
-        task = paste_task(corpus, "Andrea works at Siemens", catalogue_set="Organization")
+        task = paste_task(corpus, "Andrea works at ExampleCorp", catalogue_set="Organization")
         offered = set(task.catalogue or ())
         assert "Organization" in offered
         assert "Person" not in offered
@@ -1117,7 +1535,7 @@ class TestAPastedDocumentChoosesANamedSet:
     def test_several_sets_are_offered_together_because_a_sentence_crosses_them(self):
         corpus = load_schemaorg()
         sets = catalogue_sets(corpus)
-        task = paste_task(corpus, "Andrea works at Siemens", catalogue_set=["Person", "Organization"])
+        task = paste_task(corpus, "Andrea works at ExampleCorp", catalogue_set=["Person", "Organization"])
         offered = set(task.catalogue or ())
         assert offered == set(sets["Person"]) | set(sets["Organization"])
         assert {"Person", "Organization"} <= offered
@@ -1136,7 +1554,7 @@ class TestAPastedDocumentChoosesANamedSet:
         relation the document states has nowhere to go but a text field.
         """
         corpus = load_schemaorg()
-        task = paste_task(corpus, "Andrea works at Siemens", catalogue_set=["Person", "Organization"])
+        task = paste_task(corpus, "Andrea works at ExampleCorp", catalogue_set=["Person", "Organization"])
         slots = (task.answer_schema or {})["properties"]["entities"]["items"]["properties"]
         assert "worksFor" in slots
         assert "worksFor" in (task.property_ranges or {})
@@ -1144,11 +1562,11 @@ class TestAPastedDocumentChoosesANamedSet:
     def test_a_paste_is_offered_the_slot_its_entities_are_named_by(self):
         """The generated corpus withholds ``name`` and a pasted sentence needs it.
 
-        Asked for "Andrea works at Siemens" without it, gpt-5-nano answered
+        Asked for "Andrea works at ExampleCorp" without it, gpt-5-nano answered
         with ``additionalName`` on one run and ``address`` on the next.
         """
         corpus = load_schemaorg()
-        task = paste_task(corpus, "Andrea works at Siemens", catalogue_set=["Person", "Organization"])
+        task = paste_task(corpus, "Andrea works at ExampleCorp", catalogue_set=["Person", "Organization"])
         slots = (task.answer_schema or {})["properties"]["entities"]["items"]["properties"]
         assert NAME_SLOT in slots
         assert all(NAME_SLOT in props for props in (task.branches or {}).values())
@@ -1186,7 +1604,7 @@ class TestTheConditionTheInterfaceAdvertises:
         return Playground(load_schemaorg(), task_count=2)
 
     def test_a_paste_is_not_advertised_with_a_trim_it_will_not_run(self, playground):
-        pasted = paste_task(load_schemaorg(), "Andrea works at Siemens")
+        pasted = paste_task(load_schemaorg(), "Andrea works at ExampleCorp")
         assert playground.effective_options(pasted).catalogue_size is None
         assert "n25" not in playground._condition_html()
 
@@ -1210,6 +1628,74 @@ class TestTheConditionTheInterfaceAdvertises:
         playground.client_choice.value = PROVIDER
         assert playground.effective_options().judge_model == "gpt-5-nano"
         assert 'data-judge="gpt-5-nano"' in playground._condition_html()
+
+    def test_auto_merge_defaults_on_and_is_advertised(self, playground):
+        assert playground.auto_merge_toggle.value is True
+        assert 'data-auto-merge="true"' in playground._condition_html()
+
+    def test_turning_auto_merge_off_is_advertised_and_reaches_the_graph(self, playground):
+        """The widget and not a hardcoded default is what `fold` reads."""
+        playground.auto_merge_toggle.value = False
+        assert 'data-auto-merge="false"' in playground._condition_html()
+        playground.fold(Outcome(cell=None, graph=build_graph(triples(("e1", "name", "x")))))
+        assert playground.state.auto_merge_exact_match is False
+
+    def test_the_documents_panel_is_empty_before_anything_is_extracted(self, playground):
+        assert "No entity" in playground._documents_html()
+
+    def test_the_documents_panel_lists_what_the_graph_holds(self, playground):
+        playground.fold(Outcome(cell=None, graph=build_graph(triples(("e1", "name", "Alice")))))
+        assert "name: Alice" in playground._documents_html()
+
+    def test_a_document_carries_the_links_leaving_it(self, playground):
+        """A dump of properties alone says nothing about the graph."""
+        payload = {
+            "entities": [
+                {"id": "e1", "type": "Person", "name": "Alice", "worksFor": "e2"},
+                {"id": "e2", "type": "Organization", "name": "ExampleCorp"},
+            ]
+        }
+        playground.fold(Outcome(cell=None, graph=build_graph(extract_json(payload))))
+        alice, corp = sorted(playground.state.nodes.values(), key=lambda n: n.label)
+        documents = {document["id"]: document for document in playground.state.documents()}
+        # The id of the other document and not its label, so the dump can be
+        # walked. The edge is written once, under the entity that asserted it.
+        assert documents[alice.id]["works_for"] == corp.id
+        assert "works_for" not in documents[corp.id]
+        assert f"works_for: {corp.id}" in playground._documents_html()
+
+
+@needs_schemaorg
+class TestTheInterfaceBuildsItsOwnGraph:
+    """`extract` rebuilds the graph the session already built, for one reason.
+
+    ``show_classes`` is a choice the interface owns and the session knows
+    nothing about. Rebuilding means every other input has to be handed over a
+    second time, and an input left out of the second call is invisible: the
+    session's own graph is correct and the one on screen is not.
+    """
+
+    @pytest.fixture
+    def playground(self):
+        pytest.importorskip("panel")
+        pytest.importorskip("panelini")
+        from oold_llm_bench.playground.app import Playground
+
+        return Playground(load_schemaorg(), task_count=2, client_for=lambda *args: None)
+
+    def test_a_mention_the_plan_read_reaches_the_graph_on_screen(self, playground, monkeypatch):
+        from types import SimpleNamespace
+
+        from oold_llm_bench.playground import app as module
+
+        produced = extract_json({"entities": [{"id": "e1", "type": "Person", "worksFor": "e2"}]})
+        result = SimpleNamespace(mentions={"e1": "Jane"}, calls=None, links=[], dangling=[], selected={})
+        monkeypatch.setattr(module, "run_once", lambda *a, **k: Outcome(cell=None, result=result, produced=produced))
+
+        outcome = playground.extract("Jane works at ExampleCorp")
+        labels = {node.id: node.label for node in outcome.graph.nodes.values() if node.kind == "entity"}
+        assert labels == {"e1": "Jane"}
+        assert outcome.graph.nodes["e1"].named is True
 
 
 class TestLinksAreNotIdentityEvidence:
@@ -1237,12 +1723,23 @@ class TestLinksAreNotIdentityEvidence:
         assert "works_for" in _comparable("e1", node).values
 
     def test_two_entities_agreeing_only_on_a_link_are_not_merged(self):
-        """Without the exclusion this is an exact match on nothing real."""
+        """Without the exclusion this is an exact match on nothing real.
+
+        `decide`'s literal-restatement check merges two entities agreeing on
+        every stated value whether or not either carries a name, which is
+        what an orchestration resubmitting one unnamed entity needs (see
+        `TestGraphState.test_an_unchanged_node_is_stored_rather_than_re_added`).
+        It does not know a link property from any other, so the caller still
+        has to leave link values out before calling it: the exclusion in
+        `_comparable` (`test_a_link_slot_is_left_out_of_the_comparison`) is
+        what stands between this and an exact match on nothing real, not
+        anything in `decide` itself.
+        """
         from oold_llm_bench.playground.identity import EXACT_MATCH, Comparable, decide
 
         left = Comparable(key="a", class_path="Person", values={"works_for": "e2"})
         right = Comparable(key="b", class_path="Person", values={"works_for": "e2"})
-        assert decide(left, right, StubJudge({}, name="asked")).outcome == EXACT_MATCH
+        assert decide(left, right, StubJudge({}, name="unused")).outcome == EXACT_MATCH
 
         bare = Comparable(key="a", class_path="Person", values={})
         judge = StubJudge({}, name="asked")
@@ -1268,11 +1765,13 @@ class TestTheSmallerReadOutFaults:
         from oold_llm_bench.playground.graph import Node, _fold, _is_named
 
         standing = Node(id="e2", label="Organization", kind="entity", class_path="Organization", data={"id": "e2"})
-        named = Node(id="e2", label="Siemens", kind="entity", class_path="Organization", data={"id": "e2"})
+        named = Node(
+            id="e2", label="ExampleCorp", kind="entity", class_path="Organization", data={"id": "e2"}, named=True
+        )
         assert not _is_named(standing)
         assert _is_named(named)
-        assert _fold(standing, named, []).label == "Siemens"
-        assert _fold(named, standing, []).label == "Siemens"
+        assert _fold(standing, named, []).label == "ExampleCorp"
+        assert _fold(named, standing, []).label == "ExampleCorp"
 
     def test_a_property_stated_twice_is_still_compared(self):
         """`_data_of` keeps both readings as a list, and a list was skipped.
@@ -1306,3 +1805,34 @@ class TestTheSmallerReadOutFaults:
         outcome = Playground(load_schemaorg(), task_count=2).extract("   ")
         assert outcome.error and "no document" in outcome.error
         assert outcome.graph is None
+
+
+class TestPlaygroundCredentials:
+    """The playground failed to call any model with "missing credentials"
+    naming a variable a `.env` right next to it already set, because
+    nothing in its entry point had ever read that file. The CLI already
+    has this; this is the same fix in the other entry point."""
+
+    def test_a_dotenv_next_to_the_working_directory_is_read(self, tmp_path, monkeypatch):
+        from oold_llm_bench.playground.__main__ import _credentials
+
+        monkeypatch.delenv("OOLD_BENCH_TEST_VAR", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("OOLD_BENCH_TEST_VAR=from-file\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        _credentials(None)
+        import os
+
+        assert os.environ["OOLD_BENCH_TEST_VAR"] == "from-file"
+
+    def test_an_already_exported_variable_is_not_overwritten(self, tmp_path, monkeypatch):
+        from oold_llm_bench.playground.__main__ import _credentials
+
+        monkeypatch.setenv("OOLD_BENCH_TEST_VAR", "from-shell")
+        env_file = tmp_path / ".env"
+        env_file.write_text("OOLD_BENCH_TEST_VAR=from-file\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        _credentials(None)
+        import os
+
+        assert os.environ["OOLD_BENCH_TEST_VAR"] == "from-shell"

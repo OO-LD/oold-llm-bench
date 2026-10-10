@@ -18,6 +18,7 @@ no provider, no client and no optional dependency installed.
 from __future__ import annotations
 
 import math
+import uuid
 from collections.abc import Container, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
@@ -25,11 +26,13 @@ from typing import Any, Protocol
 from oold_llm_bench.grading.triples import Quantity, Reference, TripleSet, normalise_property
 from oold_llm_bench.playground.identity import (
     CLOSE_MATCH,
+    MERGE,
+    NO_ACTION,
     Comparable,
     Decision,
     Judge,
     Ledger,
-    NoJudge,
+    action_for,
     decide,
 )
 
@@ -83,7 +86,7 @@ PARALLEL_ROUNDNESS = 0.3
 
 The renderer draws every edge between two nodes along the same path, so a
 second one lands under the first and the two labels land on each other.
-``multi_step`` reaches that on one sentence: "Andrea works at Siemens" comes
+``multi_step`` reaches that on one sentence: "Andrea works at ExampleCorp" comes
 back as ``worksFor`` one way and ``employee`` the other, which is two
 assertions and, drawn straight, one line nobody can read.
 
@@ -98,6 +101,25 @@ A loop is not drawn as a curve between two points, so the roundness that
 separates parallel edges does nothing to it. The renderer turns it around its
 node instead, and that is the knob this uses. The first loop keeps the
 renderer's own quarter turn, so a node carrying one is drawn as before.
+"""
+
+CONNECTING_KINDS: frozenset[str] = frozenset({"link", "dangling"})
+"""Edge kinds that join an entity to something other than itself.
+
+A self-loop is left out because it connects nothing: an entity whose only
+edge points at itself is as unreachable as one with no edge at all. A type
+edge joins an entity to its class rather than to another entity, and an
+identity edge is the session's verdict rather than an assertion the answer
+made.
+"""
+
+ASSERTED_KINDS: frozenset[str] = frozenset({"link", "dangling", "self"})
+"""Edge kinds the answer itself asserted, as against the ones drawn about it.
+
+A dangling edge and a self-loop are both wrong and both stated: the answer
+pointed at an entity it never reported, or at itself. A ``type`` edge restates
+the class the node already carries, and an identity edge is the session's
+verdict on two answers rather than anything either one said.
 """
 
 NAME_KEYS: tuple[str, ...] = ("name", "legal_name", "alternate_name", "title", "headline", "identifier")
@@ -129,6 +151,14 @@ class Node:
     are two nodes reading the same word, an edge between them reads
     ``Person -> Person``, and a class node beside its instance reads the same.
     None of those is a self-loop and all three look like one.
+    """
+    named: bool = False
+    """Whether :attr:`label` names the thing or only stands in for it.
+
+    Set where the node is built, from whether anything named the entity at
+    all. A stand-in label is not distinguishable from a real one by looking
+    at it, and the resolver must never be offered one as a designator: two
+    entities sharing a stand-in would agree on a name neither of them has.
     """
 
     def action(self, verb: str = "addNode") -> dict[str, Any]:
@@ -210,6 +240,19 @@ class Graph:
     def dangling(self) -> list[Edge]:
         return self.edges_of_kind("dangling")
 
+    @property
+    def isolated(self) -> list[str]:
+        """Entities nothing reaches and nothing is reached from.
+
+        A plan the extraction did not carry out. The detect step said the
+        document names this thing; no property anybody filled turned out to
+        be about it, so it sits in the picture connected to nothing.
+
+        Counted apart from ``dangling``, which is the opposite failure: an
+        edge that reaches nothing still says the source asserted something.
+        """
+        return _isolated(self.nodes, self.edges.values())
+
     def describe(self) -> dict[str, Any]:
         """The counts a test asserts and a reader checks against the picture."""
         return {
@@ -221,7 +264,18 @@ class Graph:
             "links": len(self.edges_of_kind("link")),
             "dangling": len(self.dangling),
             "self_loops": len(self.edges_of_kind("self")),
+            "isolated": len(self.isolated),
         }
+
+
+def _isolated(nodes: Mapping[str, Node], edges: Iterable[Edge]) -> list[str]:
+    """Entity ids no connecting edge touches, at either end."""
+    touched: set[str] = set()
+    for edge in edges:
+        if edge.kind in CONNECTING_KINDS:
+            touched.add(edge.source)
+            touched.add(edge.target)
+    return sorted(key for key, node in nodes.items() if node.kind == "entity" and key not in touched)
 
 
 def links_of(result: Any) -> tuple[list[Link], list[Link]]:
@@ -245,29 +299,87 @@ def _name_of(values: list[tuple[str, Any]]) -> str | None:
     Preferred over the class for the label. A graph of "Person" and
     "Organization" says what the model classified and nothing about what the
     document said, which is the half a reader is checking.
+
+    A ``Person`` recorded by a split ``givenName``/``familyName`` rather than
+    one ``name`` falls back to the class otherwise: found live, 10 of 208
+    linked-articles sources are a person named that way and none of
+    :data:`NAME_KEYS` reads it, so every one of them drew as a node labelled
+    "Person" rather than by anyone's actual name. Composed only when neither
+    half is independently in :data:`NAME_KEYS`'s stronger keys, so a direct
+    ``name`` or ``title`` still wins when the answer gave one.
     """
     held = {normalise_property(prop): value for prop, value in values if isinstance(value, str) and value.strip()}
     for key in NAME_KEYS:
         found = held.get(key)
         if found:
             return found.strip()
-    return None
+    composed = " ".join(part.strip() for part in (held.get("given_name"), held.get("family_name")) if part)
+    return composed or None
 
 
-def _data_of(key: str, class_path: str | None, values: list[tuple[str, Any]]) -> dict[str, Any]:
+def _placeholder_label(class_path: str | None, node_id: str) -> str:
+    """What to call an entity nothing named, once it has a graph id.
+
+    The class and the id the graph handed out. The class says what the node
+    is and the id distinguishes it from the next unnamed one of its kind,
+    which an answer-scoped key cannot: that key is scoped to one call and
+    every turn hands out the same few.
+
+    Only the id where no class was claimed, rather than a word like "Thing"
+    standing in for one, because the absence of a class is itself worth
+    seeing.
+    """
+    return f"{class_path} {node_id}" if class_path else node_id
+
+
+def _short_uuid() -> str:
+    """A fresh id for a node entering the graph for the first time.
+
+    Not the orchestration's own ``e1``/``e2``: those are scoped to one call
+    and collide the moment a second turn's entity also answers as ``e1``,
+    which is what the ``#2``-suffixed id this replaces was papering over. A
+    graph node's identity is the session's to hand out, not the answer's, so
+    it is never reused and never needs disambiguating against a turn number.
+    Eight hex characters is short enough to read in a tooltip and collision
+    only matters within one session's node count, not at any wider scale.
+    """
+    return uuid.uuid4().hex[:8]
+
+
+def _data_of(
+    key: str, class_path: str | None, values: list[tuple[str, Any]], *, mention: str | None = None
+) -> dict[str, Any]:
+    """One entity as the tooltip and the YAML view read it.
+
+    The mention is kept apart from the properties and never written into a
+    ``name`` slot. It is what the document called the entity, not a value the
+    document stated, and folding it in would make the YAML claim an extraction
+    that did not happen and the score count a property nobody filled.
+    """
     data: dict[str, Any] = {"id": key}
     if class_path:
         data["type"] = class_path
+    if mention:
+        data["mention"] = mention
     for prop, value in sorted(values, key=lambda pair: pair[0]):
-        existing = data.get(prop)
-        label = _label_of(value)
-        if existing is None:
-            data[prop] = label
-        elif isinstance(existing, list):
-            existing.append(label)
-        else:
-            data[prop] = [existing, label]
+        _put(data, prop, _label_of(value))
     return data
+
+
+def _put(data: dict[str, Any], prop: str, value: Any) -> None:
+    """Add one value, keeping both readings where a property is stated twice.
+
+    A second value becomes a list rather than replacing the first. Which of
+    two readings is right is not a question a view gets to answer, and showing
+    one of them would hide that the answer held both.
+    """
+    existing = data.get(prop)
+    if existing is None:
+        data[prop] = value
+    elif isinstance(existing, list):
+        existing.append(value)
+    else:
+        data[prop] = [existing, value]
 
 
 def build_graph(
@@ -275,12 +387,13 @@ def build_graph(
     *,
     links: Iterable[Link] = (),
     dangling: Iterable[Link] = (),
+    mentions: Mapping[str, str] | None = None,
     show_classes: bool = False,
     show_literals: bool = False,
 ) -> Graph:
     """Convert one answer into nodes and edges.
 
-    Three sources feed this and each says something the others cannot.
+    Four sources feed this and each says something the others cannot.
 
     The triples give the entities and, where a reference resolved, the edges
     between them. The agent's ``links`` give the edges an orchestration that
@@ -288,6 +401,14 @@ def build_graph(
     cannot see: a link whose target was never emitted stays an ordinary string
     in the triples, because the extractor only resolves an id some entity
     claimed. The agent's ``dangling`` names exactly those.
+
+    The agent's ``mentions`` give what the document called each entity, which
+    is the one thing an extracted property cannot be relied on for. Nobody
+    writes "Jane is named Jane", so a property step asked whether the document
+    states a ``name`` for "Jane works at ExampleCorp" is right to answer no:
+    claude-haiku-4-5 chooses ``worksFor`` and ``employee`` on 8 of 8 runs and
+    ``name`` on none. The plan step read "Jane" correctly every one of those
+    times, and this is where that reading becomes the label.
 
     ``show_classes`` draws the claimed class as its own node, which makes two
     entities landing on one class visible as a shared node. Off by default,
@@ -315,15 +436,27 @@ def build_graph(
     for triple in produced.triples:
         by_entity.setdefault(triple.entity, []).append((triple.prop, triple.value))
 
+    read = dict(mentions or {})
     for key, values in by_entity.items():
         class_path = produced.classes.get(key)
         literals = [(p, v) for p, v in values if not isinstance(v, Reference)]
+        # An extracted name first, then what the plan read the entity from.
+        # The two are not the same claim: a name is a property the document
+        # states, a mention is the words it refers to the thing by, and only
+        # the first is scored. Both name the thing well enough to draw and to
+        # compare, which is what a label is for.
+        named = _name_of(literals) or read.get(key)
         graph.nodes[key] = Node(
             id=key,
-            label=_name_of(literals) or class_path or key,
+            # The key where neither named this entity, which holds only until
+            # `GraphState` hands the node a graph id and composes a stand-in
+            # from it. A class on its own would not distinguish two unnamed
+            # entities of one class.
+            label=named or key,
             kind="entity",
-            data=_data_of(key, class_path, literals),
+            data=_data_of(key, class_path, literals, mention=read.get(key)),
             class_path=class_path,
+            named=named is not None,
         )
 
     if show_classes:
@@ -371,7 +504,7 @@ def _add_link(
     already refuses to read one out of a value, but an orchestration that
     offers the plan's ids as an enum lets a model answer ``worksFor`` with the
     organisation's own id, and nano does: five of the seven links one run
-    asserted about "Siemens" pointed at "Siemens". Counting those as links
+    asserted about "ExampleCorp" pointed at "ExampleCorp". Counting those as links
     would report an answer about nothing as an answer with edges.
     """
     for end in (source, target):
@@ -449,9 +582,12 @@ class GraphState:
     ``e1`` and ``e2`` every time, so folding turn two in by key alone wrote
     turn two's first entity over turn one's and the graph stopped growing at
     two nodes. An incoming key therefore resolves against the entities already
-    drawn, by :func:`~oold_llm_bench.playground.identity.decide`, and only an
-    ``exactMatch`` reuses a node. Anything else is a new node under a
-    turn-suffixed id, and a ``closeMatch`` gets its own edge between the two.
+    drawn, by :func:`~oold_llm_bench.playground.identity.decide`, and what
+    :func:`~oold_llm_bench.playground.identity.action_for` says to do about
+    the decision: an ``exactMatch`` reuses a node where
+    :attr:`auto_merge_exact_match` leaves it to, and anything else, including
+    an ``exactMatch`` the toggle holds back, is a new node under a
+    turn-suffixed id with a ``closeMatch`` edge of its own between the two.
 
     One answer resolves against itself on the same rule. Asked for "Alice works
     at Example Corp", gpt-5-nano reported the organisation twice in a single
@@ -460,11 +596,19 @@ class GraphState:
     so a score still counts what was answered; only the picture is one graph.
     """
 
-    def __init__(self, judge: Judge | None = None) -> None:
+    def __init__(self, judge: Judge | None = None, *, auto_merge_exact_match: bool = True) -> None:
         self.nodes: dict[str, Node] = {}
         self.edges: dict[tuple[str, str, str], Edge] = {}
         self.turn = 0
-        self.judge: Judge = judge or NoJudge()
+        self.judge = judge
+        self.auto_merge_exact_match = auto_merge_exact_match
+        """Whether an ``exactMatch`` folds on sight or is only drawn.
+
+        Read by :func:`~oold_llm_bench.playground.identity.action_for` on
+        every comparison, so a reader can flip it between two turns and see
+        the next ``exactMatch`` deferred instead of merged, the same toggle
+        the interface exposes.
+        """
         self.ledger = Ledger()
         self.conflicts: dict[str, list[str]] = {}
         """Properties a merged node holds two readings of, by node id.
@@ -482,7 +626,20 @@ class GraphState:
             target = mapping[key]
             current = self.nodes.get(target)
             folded = node if current is None else _fold(current, node, self.conflicts.setdefault(target, []))
-            placed = replace(folded, id=target)
+            # The id the graph handed out, in the record as well as on the
+            # node. `data` is what the tooltip and the YAML view read, so the
+            # id printed there has to be the one the rest of the graph uses
+            # and not the answer-scoped key the node arrived under.
+            #
+            # An unnamed entity's label is composed here for the same reason:
+            # it stands in for a name, and this is the first point at which
+            # there is an id worth standing in with. A class or a `missing`
+            # node keeps the label it was drawn with; both already say what
+            # they are.
+            label = folded.label
+            if folded.kind == "entity" and not folded.named:
+                label = _placeholder_label(folded.class_path, target)
+            placed = replace(folded, id=target, label=label, data={**folded.data, "id": target})
             if current is None:
                 diff.actions.append(placed.action())
                 diff.created_nodes.append(target)
@@ -570,7 +727,13 @@ class GraphState:
                     if other != merged
                 )
                 continue
-            free = key if key not in self.nodes and key not in taken else f"{key}#{self.turn}"
+            # A `missing` node keeps the local key it arrived under rather
+            # than drawing a fresh one: that key is the only identity it has,
+            # and it is what the healing branch above looks `self.nodes` up
+            # by once a later turn reports the same key as a real entity.
+            # Handing it a random id the moment it is created would make that
+            # lookup fail forever, and the placeholder would never heal.
+            free = key if node.kind == "missing" else _short_uuid()
             mapping[key] = free
             taken.add(free)
             if node.kind == "entity":
@@ -588,9 +751,10 @@ class GraphState:
     ) -> tuple[str | None, list[str]]:
         """The node this entity already is, and the ones nobody could decide.
 
-        The first ``exactMatch`` wins and the rest are not asked. What is left
-        is one comparison per entity already drawn, and a comparison the class
-        rule and exact agreement cannot settle is a call, so a graph that grows
+        The first entity :func:`~oold_llm_bench.playground.identity.action_for`
+        says to merge wins and the rest are not asked. What is left is one
+        comparison per entity already drawn, and a comparison the class rule
+        and exact agreement cannot settle is a call, so a graph that grows
         gets dearer to grow. The Identity read-out reports the two routes apart
         for that reason: the cost is on screen rather than in a bill.
         """
@@ -601,9 +765,10 @@ class GraphState:
             against = _comparable(other_id, other, _link_props(drawn, other_id))
             decision = self.ledger.record(decide(incoming, against, self.judge))
             diff.decisions.append(decision)
-            if decision.merges:
+            action = action_for(decision, auto_merge_exact_match=self.auto_merge_exact_match)
+            if action == MERGE:
                 return other_id, unclear
-            if decision.outcome == CLOSE_MATCH:
+            if action != NO_ACTION:
                 unclear.append(other_id)
         return None, unclear
 
@@ -641,6 +806,32 @@ class GraphState:
             overlays.append(overlay)
         return overlays
 
+    def documents(self) -> list[dict[str, Any]]:
+        """Every entity the graph holds, written out as its own document.
+
+        The node's own values plus the edges leaving it. A link is something
+        the answer asserted about the entity, so a document without them
+        states half of what was extracted, and the half it drops is the half
+        a graph exists for.
+
+        A link carries the id of the node it reaches, which is the id that
+        node's own document is headed by. That is what makes the dump
+        traversable rather than a list of unconnected records.
+
+        Identity edges are left out. ``skos:closeMatch`` is what the session
+        decided about two documents, not what either document says.
+        """
+        documents: list[dict[str, Any]] = []
+        for node in self.nodes.values():
+            if node.kind != "entity":
+                continue
+            data = dict(node.data)
+            leaving = (e for e in self.edges.values() if e.source == node.id and e.kind in ASSERTED_KINDS)
+            for edge in sorted(leaving, key=lambda e: (e.label, e.target)):
+                _put(data, edge.label, edge.target)
+            documents.append(data)
+        return documents
+
     def describe(self) -> dict[str, Any]:
         """The state a test reads instead of reading pixels."""
         kinds: Mapping[str, int] = {
@@ -660,6 +851,7 @@ class GraphState:
             "links": sorted("|".join(e.key) for e in self.edges.values() if e.kind == "link"),
             "dangling": sorted("|".join(e.key) for e in self.edges.values() if e.kind == "dangling"),
             "self_loops": sorted("|".join(e.key) for e in self.edges.values() if e.kind == "self"),
+            "isolated": _isolated(self.nodes, self.edges.values()),
             "close_matches": sorted("|".join(e.key) for e in self.edges.values() if e.kind == "closeMatch"),
             "conflicts": {key: sorted(props) for key, props in sorted(self.conflicts.items()) if props},
             "identity": self.ledger.describe(),
@@ -729,18 +921,21 @@ def _comparable(key: str, node: Node, links: Container[str] = ()) -> Comparable:
         texts = sorted({str(item).strip() for item in readings if isinstance(item, str) and str(item).strip()})
         if texts:
             values[prop] = texts[0] if len(texts) == 1 else " | ".join(texts)
-    return Comparable(key=key, class_path=node.class_path, values=values)
+    # `node.label` already resolved a split `givenName`/`familyName` into one
+    # name, or fell back to the node's own id where nothing named it; passed
+    # through so a resolver comparison designates the entity the same way the
+    # picture already does, rather than re-deriving it from `values` alone.
+    return Comparable(key=key, class_path=node.class_path, values=values, label=node.label if _is_named(node) else None)
 
 
 def _is_named(node: Node) -> bool:
     """Whether this node's label names the thing or stands in for one.
 
-    A node drawn before any name arrived is labelled by its id or by its
-    class, and both read as a label while being the absence of one. Treating
-    them as present meant a later turn carrying the real name never replaced
-    it and the node stayed "Organization" for good.
+    A node nothing named still carries a label, so the flag decides this and
+    not the text. A turn that supplies a real name upgrades the node; a
+    second stand-in leaves it as it was.
     """
-    return bool(node.label) and node.label != node.id and node.label != node.class_path
+    return node.named and bool(node.label)
 
 
 def _link_props(edges: Iterable[Edge], key: str) -> frozenset[str]:
@@ -772,11 +967,18 @@ def _fold(current: Node, incoming: Node, conflicts: list[str]) -> Node:
     if class_path:
         data["type"] = class_path
         data.pop("type (conflict)", None)
-    # A fallback is not a label. The node keeps whichever reading actually
+    # A stand-in is not a label. The node keeps whichever reading actually
     # names the thing, so a turn that finally supplies a name upgrades a node
-    # that had been standing under its own id or its class path.
+    # that had only been standing in for one.
+    named = current.named or incoming.named
     label = current.label if _is_named(current) else incoming.label
-    return replace(current, data=data, class_path=class_path, label=label)
+    # A healed placeholder is the one direction kind has to change: a
+    # `missing` node is a stand-in for an entity a link named and nothing
+    # reported, and the entity reporting it later is exactly what it was
+    # waiting for. Without this a healed placeholder stayed drawn as
+    # "missing" forever, even once a real entity had filled it in.
+    kind = incoming.kind if current.kind == "missing" else current.kind
+    return replace(current, data=data, class_path=class_path, label=label, kind=kind, named=named)
 
 
 VIS_OPTIONS: dict[str, Any] = {

@@ -54,6 +54,8 @@ from pathlib import Path
 
 import pytest
 
+from oold_llm_bench.corpus.linked_articles import LINKS_CACHE
+from oold_llm_bench.experiments.corpora import DOCUMENTS_CACHE
 from oold_llm_bench.grading.triples import Reference, normalise_property
 
 pytest.importorskip("panel")
@@ -61,6 +63,7 @@ pytest.importorskip("panelini")
 pytest.importorskip("playwright.sync_api")
 
 from oold_llm_bench.playground.corpora import SCHEMAS_ENV, load_schemaorg, paste_task, schemaorg_tasks
+from oold_llm_bench.playground.graph import NAME_KEYS
 from oold_llm_bench.playground.identity import CLOSE_MATCH, EXACT_MATCH
 
 SCHEMAS = os.environ.get(SCHEMAS_ENV)
@@ -277,6 +280,22 @@ def _expected_edge(task) -> tuple[str, str, str]:
     pytest.fail(f"task {task.id} asserts no edge, so there is nothing to check a graph against")
 
 
+def _designator(instance) -> str:
+    """What the graph will have labelled this expected instance by.
+
+    A stated name where the instance states one. Otherwise its class, which
+    is what the stand-in label of an entity nothing named is built from. The
+    class alone does not distinguish two instances of one class; `_node_for`
+    refuses to pick between them rather than guessing.
+    """
+    held = {normalise_property(prop): value for prop, value in instance.fields.items()}
+    for key in NAME_KEYS:
+        found = held.get(key)
+        if isinstance(found, str) and found.strip():
+            return found.strip()
+    return str(instance.class_path).rsplit("/", 1)[-1]
+
+
 def _nodes_for(state: dict, wanted: str) -> list[str]:
     """Every node whose label names this thing, in id order."""
     return sorted(key for key, label in state["labels"].items() if wanted.casefold() in str(label).casefold())
@@ -352,8 +371,7 @@ class TestACorpusTask:
         state = _submit_and_settle(page, ready)
         _shoot(page, tmp_path, "playground-graph.png")
 
-        keys = sorted(instance.key for instance in expected_task.expected)
-        source, sink, prop = _expected_edge(expected_task)
+        source_key, sink_key, prop = _expected_edge(expected_task)
 
         if LIVE:
             # A model is not required to answer perfectly, only correctly
@@ -363,10 +381,18 @@ class TestACorpusTask:
             assert state["entities"], "the model reported no entity at all"
             assert state["self_loops"] == [], f"an entity points at itself: {state['self_loops']}"
         else:
-            assert state["entities"] == keys, f"graph holds {state['entities']}, the task expects {keys}"
+            # Offline replay echoes the task's own data under the graph's own
+            # ids, not the task's keys, so a task key has to be resolved to
+            # the id the graph drew it under. `_designator` is what the label
+            # will say: a stated name, or the class a stand-in is built from.
+            resolved = {instance.key: _node_for(state, _designator(instance)) for instance in expected_task.expected}
+            assert sorted(state["entities"]) == sorted(resolved.values()), (
+                f"graph holds {state['entities']}, the task expects {sorted(resolved.values())}"
+            )
             assert state["dangling"] == [], f"an edge reaches nothing: {state['dangling']}"
+            source, sink = resolved[source_key], resolved[sink_key]
             assert f"{source}|{sink}|{prop}" in state["links"], f"the edge is missing from {state['links']}"
-            assert state["nodes"] == len(keys)
+            assert state["nodes"] == len(resolved)
 
     def test_the_score_panel_reports_a_perfect_run_on_a_corpus_task(self, ready, page):
         """Only assertable offline, where the answer is the ground truth."""
@@ -378,6 +404,19 @@ class TestACorpusTask:
         reported = page.locator(".pg-score .pg-primary").first.inner_text()
         assert "Primary value F1" in reported
         assert "1.000" in reported
+
+    def test_the_near_dimensions_are_shown_beside_the_strict_ones(self, ready, page):
+        """`class_near`, `value_near` and `property_near` widen a strict
+        dimension with a vocabulary- or lineage-aware reading of a hit; the
+        score panel's fixed row order used to name only the three they widen."""
+        if LIVE:
+            pytest.skip("a live model has no guaranteed score to assert")
+
+        _submit_and_settle(page, ready)
+        _open_tab(page, "Score")
+        table = page.locator(".pg-score .pg-table").first.inner_text()
+        for dimension in ("value_near", "class_near", "property_near"):
+            assert dimension in table, f"{dimension} is missing from the score panel: {table}"
 
     def test_the_cost_panel_separates_the_plan_call_from_the_fill_calls(self, ready, page):
         """A segmented run is one plan call and one fill call per shortlist."""
@@ -399,7 +438,116 @@ class TestACorpusTask:
             assert "schema fidelity" in table
 
 
-ANDREA = "Andrea works at Siemens"
+NEW_CORPUS_PREFIX = {
+    "wikidata-schemaorg": "wds-",
+    "linked-articles": "wdl-",
+    "sequence": "pg-sequence-",
+}
+"""The three sources built this session, and the id every one of their own
+tasks starts with. Checked against the task selector rather than trusted,
+because nothing else on screen says which corpus a loaded task came from."""
+
+needs_wikidata_documents = pytest.mark.skipif(
+    not DOCUMENTS_CACHE.is_file(),
+    reason=f"needs {DOCUMENTS_CACHE}: scripts/fetch_wikidata_documents.py, or uv sync --extra corpora for the Hub",
+)
+
+needs_wikidata_links = pytest.mark.skipif(
+    not LINKS_CACHE.is_file(),
+    reason=f"needs {LINKS_CACHE}: scripts/harvest_wikidata_links.py",
+)
+
+
+def _select_corpus_and_wait(page, name: str) -> list[str]:
+    """Choose a corpus and wait for the task selector to offer its own tasks.
+
+    Nothing reflects a corpus change the way the condition pane reflects
+    every other control, so this polls the task list itself: clicking Load
+    straight after selecting the corpus loaded the previous corpus's first
+    task on a slow rerender, the same race `_choose` already guards against
+    for the condition pane.
+    """
+    page.locator(".pg-corpus select").select_option(name)
+    prefix = NEW_CORPUS_PREFIX[name]
+    ids: list[str] = []
+    for _ in range(POLL_LIMIT):
+        ids = [v for v in page.locator(".pg-task select option").all_inner_texts() if v]
+        if ids and all(task_id.startswith(prefix) for task_id in ids):
+            return ids
+        page.wait_for_timeout(POLL_MS)
+    pytest.fail(f"the task selector never settled on {name}'s own tasks: {ids}")
+
+
+def _load_and_settle(page, blank, task_id: str | None = None) -> dict:
+    """Load a task, by id where one is named, and submit it."""
+    if task_id is not None:
+        page.locator(".pg-task select").select_option(task_id)
+    page.locator(".pg-load button").first.click()
+    page.wait_for_selector('[data-testid="run-status"][data-status="loaded"]', timeout=30_000)
+    return _submit_and_settle(page, blank)
+
+
+class TestTheCorporaBuiltThisSession:
+    """Three task sources the selector did not offer before this session.
+
+    Offline throughout: every one of these corpora carries its own ground
+    truth, so the replay client answers all three the way it answers the
+    default schema.org corpus, and nothing here needs a live model or
+    `OOLD_BENCH_UI_LIVE`.
+    """
+
+    @pytest.mark.parametrize(
+        "corpus_name",
+        [
+            pytest.param("wikidata-schemaorg", marks=needs_wikidata_documents),
+            pytest.param("linked-articles", marks=[needs_wikidata_documents, needs_wikidata_links]),
+            "sequence",
+        ],
+    )
+    def test_the_corpus_is_offered_and_its_first_task_draws_a_graph(self, opened, page, corpus_name):
+        assert corpus_name in page.locator(".pg-corpus select option").all_inner_texts()
+        _select_corpus_and_wait(page, corpus_name)
+        state = _load_and_settle(page, opened)
+        assert state["nodes"], f"{corpus_name}'s first task drew no node"
+
+    @needs_wikidata_documents
+    @needs_wikidata_links
+    def test_a_linked_articles_task_resolves_its_edge_in_one_turn(self, opened, page):
+        """The edge is cross-document because of what it reaches past: the
+        document is one article's lead, and the link it states names an
+        entity whose own record lives in a different article. Offline replay
+        answers both ends from this one task's own ground truth, so the edge
+        the graph draws is a resolved link and not a dangling one, after one
+        submission and with no second document loaded.
+        """
+        _select_corpus_and_wait(page, "linked-articles")
+        state = _load_and_settle(page, opened)
+        assert state["links"], "no link was drawn at all"
+        assert state["dangling"] == [], f"a cross-document link was left dangling: {state['dangling']}"
+
+    def test_stepping_through_a_sequence_grows_one_graph_and_asks_identity(self, opened, page):
+        """Loading each step and sending it in turn is the corpus's own
+        natural use: the turn count advances one at a time and an identity
+        comparison is made at the second step, which is the thing the
+        Identity tab exists to show rather than a log line.
+        """
+        ids = _select_corpus_and_wait(page, "sequence")
+        assert len(ids) >= 2, f"only one step was offered: {ids}"
+
+        first = _load_and_settle(page, opened, ids[0])
+        assert first["turns"] == 1
+
+        second = _load_and_settle(page, page.evaluate(_CANVAS), ids[1])
+        assert second["turns"] == 2
+
+        _open_tab(page, "Identity")
+        identity_table = page.locator(".pg-identity").first.inner_text()
+        assert "No two entities have been compared yet" not in identity_table, (
+            "stepping to the second document made no identity comparison"
+        )
+
+
+ANDREA = "Andrea works at ExampleCorp"
 
 needs_a_model = pytest.mark.skipif(
     not LIVE,

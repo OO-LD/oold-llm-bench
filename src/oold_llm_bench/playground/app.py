@@ -28,21 +28,27 @@ from oold_llm_bench.config.models import entry_for
 from oold_llm_bench.playground.corpora import (
     ALL_CLASSES,
     CORPORA,
+    SEQUENCE_DOCUMENTS,
     SchemaCorpus,
     catalogue_sets,
     is_scoreable,
+    linked_articles_tasks,
     load_schemaorg,
     paste_task,
     schemaorg_tasks,
+    sequence_tasks,
     wiki_tasks,
+    wikidata_schemaorg_tasks,
 )
 from oold_llm_bench.playground.graph import VIS_OPTIONS, Diff, GraphState, build_graph, links_of
-from oold_llm_bench.playground.identity import CLOSE_MATCH, Judge, ModelJudge, NoJudge
+from oold_llm_bench.playground.identity import DEFER, MERGE, Judge, ModelJudge, action_for
 from oold_llm_bench.playground.panels import (
     cost_rows,
     cost_total,
+    document_yaml,
     schema_rows,
     score_rows,
+    session_call_rows,
     validation_rows,
 )
 from oold_llm_bench.playground.replay import ReplayClient
@@ -144,6 +150,14 @@ class Playground:
         and a pasted document has no answer to score against."""
         self.outcome: Outcome | None = None
         self.task_count = task_count
+        self.call_log: list[dict[str, Any]] = []
+        """Every call made this session, oldest first, across every turn.
+
+        Appended to and never replaced, unlike the cost table beside it: that
+        one is one turn's bill, and this is the session's history of what was
+        asked, so a reader can scroll back through it after the turn that made
+        a call is no longer the current one.
+        """
         self._build_widgets()
         self._load_tasks()
 
@@ -184,8 +198,15 @@ class Playground:
             css_classes=["pg-judge"],
         )
         self.show_classes = pn.widgets.Checkbox(name="Draw class nodes", value=False)
+        self.auto_merge_toggle = pn.widgets.Checkbox(
+            name="Auto-merge exact match",
+            value=True,
+            css_classes=["pg-auto-merge-exact-match"],
+        )
 
-        self.corpus_choice = pn.widgets.Select(name="Corpus", options=list(CORPORA), value=CORPORA[0])
+        self.corpus_choice = pn.widgets.Select(
+            name="Corpus", options=list(CORPORA), value=CORPORA[0], css_classes=["pg-corpus"]
+        )
         self.task_choice = pn.widgets.Select(name="Task", options=[], css_classes=["pg-task"])
         self.load_button = pn.widgets.Button(name="Load task", button_type="primary", css_classes=["pg-load"])
         self.reset_button = pn.widgets.Button(name="Clear graph", css_classes=["pg-reset"])
@@ -218,6 +239,8 @@ class Playground:
         self.validation_pane = pn.pane.HTML("", sizing_mode="stretch_width", css_classes=["pg-validation"])
         self.corpus_pane = pn.pane.HTML(self._corpus_html(), sizing_mode="stretch_width", css_classes=["pg-corpus"])
         self.identity_pane = pn.pane.HTML("", sizing_mode="stretch_width", css_classes=["pg-identity"])
+        self.calls_pane = pn.pane.HTML("", sizing_mode="stretch_width", css_classes=["pg-calls"])
+        self.documents_pane = pn.pane.HTML("", sizing_mode="stretch_width", css_classes=["pg-documents"])
         self.state_pane = pn.pane.HTML(state_html(self.state), sizing_mode="stretch_width", height=STATE_PANE_HEIGHT)
         self.status_pane = pn.pane.HTML(self._status_html("idle", ""), sizing_mode="stretch_width", height=40)
         # The condition the next submission will run, republished on every
@@ -233,6 +256,7 @@ class Playground:
             self.shortlist_k,
             self.client_choice,
             self.judge_choice,
+            self.auto_merge_toggle,
         ):
             control.param.watch(lambda event: self._publish_condition(), "value")
 
@@ -242,6 +266,9 @@ class Playground:
             ("Schema sent", self.schema_pane),
             ("Validation", self.validation_pane),
             ("Identity", self.identity_pane),
+            ("Calls", self.calls_pane),
+            ("Documents", self.documents_pane),
+            ("Graph state", self.state_pane),
             ("Corpus", self.corpus_pane),
             sizing_mode="stretch_width",
         )
@@ -292,8 +319,19 @@ class Playground:
         return str(getattr(self.chat.active_widget, "value", "") or "")
 
     def _load_tasks(self) -> None:
-        if self.corpus_choice.value == "wiki-measurements":
+        choice = self.corpus_choice.value
+        if choice == "wiki-measurements":
             self.tasks = wiki_tasks(count=self.task_count)
+        elif choice == "wikidata-schemaorg":
+            self.tasks = wikidata_schemaorg_tasks(count=self.task_count)
+        elif choice == "linked-articles":
+            self.tasks = linked_articles_tasks(count=self.task_count)
+        elif choice == "sequence":
+            # A count of documents in the selector, not of sequences: the
+            # control the rest of this class exposes is `task_count`, and a
+            # second number meaning something else would need its own widget
+            # to explain it.
+            self.tasks = sequence_tasks(self.corpus, count=max(1, self.task_count // SEQUENCE_DOCUMENTS))
         else:
             self.tasks = schemaorg_tasks(self.corpus, count=self.task_count)
         self.task_choice.options = [task.id for task in self.tasks]
@@ -318,6 +356,7 @@ class Playground:
         self.state.clear()
         self.vis.clear()
         self.outcome = None
+        self.call_log.clear()
         self.state_pane.object = state_html(self.state)
         self.status_pane.object = self._status_html("idle", "")
         self._render_readouts()
@@ -378,27 +417,41 @@ class Playground:
         except Exception as exc:
             return Outcome(cell=cell, error=f"{type(exc).__name__}: {exc}")
 
+        # Logged here and not in `fold`, so a call is on the record even where
+        # the document carried nothing to draw or the fold that follows fails.
+        self.call_log.extend(session_call_rows(getattr(outcome.result, "calls", None), turn=self.state.turn + 1))
+
         if outcome.produced is not None:
             links, dangling = links_of(outcome.result)
+            # Rebuilt rather than taken from the outcome, because `show_classes`
+            # is a choice this interface owns and the session knows nothing
+            # about. Every other input has to be passed again for that, the
+            # mentions included: without them an entity no property named is
+            # drawn under a stand-in even though the plan step read its name.
             outcome.graph = build_graph(
                 outcome.produced,
                 links=links,
                 dangling=dangling,
+                mentions=getattr(outcome.result, "mentions", None) or {},
                 show_classes=bool(self.show_classes.value),
             )
         return outcome
 
-    def judge(self) -> Judge:
-        """Whatever decides the identities exact agreement did not.
+    def judge(self) -> Judge | None:
+        """Whatever decides the identities exact agreement did not, or ``None``.
 
         Built per answer, from the choice as it stands, so a reader can turn a
         judge on between two turns and see the next comparison change route.
         Offline replay drops it, decided in :meth:`effective_options` so that
-        what is reported as the judge is what is asked.
+        what is reported as the judge is what is asked. ``None`` is a real
+        choice and not a placeholder: :func:`~oold_llm_bench.playground.identity.decide`
+        reads it as no judge configured and defers through
+        :class:`~oold_llm_bench.dedup.Resolver` the same way a graded run with
+        no judge does.
         """
         name = self.effective_options().judge_model
         if not name:
-            return NoJudge()
+            return None
         from oold_llm_bench.clients.azure import Credentials, build_client
 
         return ModelJudge(client=build_client(entry_for(name), Credentials.from_env()), name=name)
@@ -414,6 +467,7 @@ class Playground:
         if outcome.graph is None:
             return None
         self.state.judge = self.judge()
+        self.state.auto_merge_exact_match = bool(self.auto_merge_toggle.value)
         return self.state.update(outcome.graph)
 
     def render(self, diff: Diff | None) -> None:
@@ -478,13 +532,18 @@ class Playground:
         # on turn five and printed a closeMatch count that grows with the
         # square of the entities. `Diff.decisions` is written for exactly this
         # and was never read.
+        # Read through `action_for` and not `d.merges`: the toggle can leave a
+        # decision the resolver called `exactMatch` undrawn as a merge, and a
+        # message that reported it merged regardless would describe a node
+        # the graph never folded.
         decisions = diff.decisions if diff is not None else []
-        merged = [d for d in decisions if d.merges]
+        actions = [(d, action_for(d, auto_merge_exact_match=self.state.auto_merge_exact_match)) for d in decisions]
+        merged = [d for d, action in actions if action == MERGE]
         if merged:
             lines.append("Merged as one entity: " + "; ".join(f"{d.right} and {d.left} ({d.route})" for d in merged))
-        unclear = [d for d in decisions if d.outcome == CLOSE_MATCH]
-        if unclear:
-            lines.append(f"{len(unclear)} pair(s) left as skos:closeMatch for a person to resolve.")
+        deferred = [d for d, action in actions if action == DEFER]
+        if deferred:
+            lines.append(f"{len(deferred)} pair(s) left as skos:closeMatch for a person to resolve.")
         if diff is not None and diff.resolved_placeholders:
             lines.append(f"{len(diff.resolved_placeholders)} entity(ies) a link had only named are now reported.")
         if outcome.shortlist:
@@ -494,6 +553,8 @@ class Playground:
     def _render_readouts(self) -> None:
         outcome = self.outcome
         self.identity_pane.object = self._identity_html()
+        self.calls_pane.object = _table(self.call_log, empty="No call has been made yet.")
+        self.documents_pane.object = self._documents_html()
         if outcome is None or outcome.cell is None:
             empty = "<p class='pg-empty'>Nothing has been run yet.</p>"
             self.score_pane.object = empty
@@ -584,6 +645,18 @@ class Playground:
         ]
         return heading + "".join(notes) + _table(rows, empty="No two entities have been compared yet.")
 
+    def _documents_html(self) -> str:
+        """The entities drawn so far, one YAML document per entity.
+
+        Read off the session's own state and not off the last outcome: the
+        graph is the running fold of every turn, and a reader here wants what
+        the graph currently holds, not what one answer added.
+        """
+        text = document_yaml(self.state.documents())
+        if not text:
+            return "<p class='pg-empty'>No entity has been extracted yet.</p>"
+        return f'<pre data-testid="documents" style="{STATE_STYLE}">{html.escape(text)}</pre>'
+
     def _corpus_html(self) -> str:
         return _table(
             [{"measure": key, "value": value} for key, value in self.corpus.describe().items()],
@@ -609,12 +682,15 @@ class Playground:
         options = self.effective_options(self._task_for(self.typed()))
         sets = ",".join(sorted(options.catalogue_set))
         judge = options.judge_model or "none"
+        auto_merge = "true" if self.auto_merge_toggle.value else "false"
         return (
             f'<div data-testid="condition" data-sets="{html.escape(sets)}" '
             f'data-judge="{html.escape(judge)}" data-model="{html.escape(options.model)}" '
-            f'data-orchestration="{html.escape(options.orchestration)}">'
+            f'data-orchestration="{html.escape(options.orchestration)}" '
+            f'data-auto-merge="{auto_merge}">'
             f"{html.escape(options.label())} on {html.escape(options.model)}<br>"
-            f"catalogue {html.escape(sets)}, judge {html.escape(judge)}</div>"
+            f"catalogue {html.escape(sets)}, judge {html.escape(judge)}, "
+            f"auto-merge exact match {auto_merge}</div>"
         )
 
     def _status_html(self, status: str, detail: str) -> str:
@@ -635,6 +711,7 @@ class Playground:
             self.client_choice,
             self.judge_choice,
             self.show_classes,
+            self.auto_merge_toggle,
             self.condition_pane,
             pn.layout.Divider(),
             pn.pane.Markdown("### Document"),
@@ -647,7 +724,9 @@ class Playground:
         right = pn.Column(
             pn.pane.Markdown("### Extracted graph"),
             pn.Column(self.vis, css_classes=["pg-graph"], sizing_mode="stretch_both", min_height=420),
-            self.state_pane,
+            # "Graph state" is a tab and not a band under the picture: it is
+            # the graph as data, wanted when checking what the picture claims
+            # and not while reading the picture itself.
             self.tabs,
             sizing_mode="stretch_both",
             min_width=460,
@@ -713,11 +792,19 @@ def serve(
     options: Options | None = None,
     address: str = "localhost",
     threaded: bool = False,
+    task_count: int = 12,
 ) -> Any:
     """Run the interface on a local server.
 
     The schema collection is read once, before the server starts, so a missing
     one is reported at the command line instead of in a browser tab.
+
+    ``task_count`` is how many documents the task selector offers, for every
+    corpus it is pointed at. Raised past the default it reaches further into a
+    corpus ordered by file position rather than balanced across classes, which
+    is how a particular entity a caller wants on screen (a sequence's own
+    steps, or a linked article whose target is also worth loading on its own)
+    gets to be a choice in the dropdown rather than a day's draw away from it.
     """
     import panel as pn
 
@@ -727,7 +814,7 @@ def serve(
     # slow for no gain: the collection is frozen and nothing writes to it.
     corpus = load_schemaorg(schemas)
     return pn.serve(
-        lambda: Playground(corpus, options=options).view(),
+        lambda: Playground(corpus, options=options, task_count=task_count).view(),
         port=port,
         show=show,
         address=address,
