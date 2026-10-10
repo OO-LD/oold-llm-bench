@@ -7,13 +7,18 @@ rerunning skips what is already on disk and retries only what failed.
 
 ``merges`` draws uniformly from the namespace-0 redirect table of a dated
 dump, resolves each ``rd_from`` page id to a Q-id through the API, and
-recovers both pre-merge states. A Wikidata merge leaves no log entry, so the
-merge is found by edit comment: ``wbmergeitems-to`` on the source, or
-``wbcreateredirect`` where the editor redirected without merging. The source's
-pre-merge state is the revision before that edit; the target's is its last
-revision before the merge timestamp, which needs ``rvstart`` and ``rvdir=older``
-rather than a scan, because an active target may have had hundreds of edits
-since.
+recovers both pre-merge states, plus the target's post-merge state. A
+Wikidata merge leaves no log entry, so the merge is found by edit comment:
+``wbmergeitems-to`` on the source, or ``wbcreateredirect`` where the editor
+redirected without merging. The source's pre-merge state is the revision
+before that edit; the target's pre-merge state is its last revision before
+the merge timestamp, which needs ``rvstart`` and ``rvdir=older`` rather than a
+scan, because an active target may have had hundreds of edits since. The
+target's post-merge state is the same call with ``rvdir=newer``, anchored on
+the merge timestamp instead of just before it: the expected patch for a
+sequence corpus built from the two pre-merge states, not re-derivable from
+them, since what a merge actually kept, added or overwrote is a fact about
+the edit and not about either side alone.
 
 ``statements`` draws from a harvest of one property's truthy statements,
 deduplicated to undirected pairs. Both ``P1889`` and ``P460`` are reciprocated
@@ -260,6 +265,20 @@ def probe(source: str, target_in_dump: str) -> dict[str, Any]:
         record["tgt_pre_ts"] = revision["timestamp"]
     else:
         record["fail_tgt"] = "the target's pre-merge state is unrecoverable"
+
+    # The expected patch: the target as the merge left it, not as it stands
+    # now. `rvdir=newer` from the merge timestamp lands on the merge's own
+    # revision or the one right after it, the same way `tgt_pre` is anchored
+    # on the revision right before. Without this a sequence corpus built from
+    # `tgt_pre`/`src_pre` would have two starting states and nothing to merge
+    # them into.
+    post_revision, post_body = content_at(target, rvstart=merge["timestamp"], rvdir="newer")
+    if post_revision and post_body:
+        record["tgt_post"] = trim(post_body)
+        record["tgt_post_revid"] = post_revision["revid"]
+        record["tgt_post_ts"] = post_revision["timestamp"]
+    else:
+        record["fail_tgt_post"] = "the target's post-merge state is unrecoverable"
     return record
 
 

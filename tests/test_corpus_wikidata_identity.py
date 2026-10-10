@@ -283,3 +283,25 @@ def test_matched_sample_is_a_selection_and_not_a_filter(corpus):
     assert {pair.id for pair in matched} <= {pair.id for pair in corpus.pairs}
     assert len(matched) < len(corpus.pairs)
     assert corpus.matched() == matched
+
+
+def test_expected_patch_is_absent_on_a_corpus_built_before_it_existed(corpus):
+    """The committed file predates `expected_patch`. Absent, not an error:
+    the field is additive, and a pair without one is simply not usable for
+    the patch question yet, the same way a pair missing `tgt_pre` already is."""
+    assert all(pair.expected_patch is None for pair in corpus.pairs)
+
+
+def test_expected_patch_round_trips_when_present(tmp_path):
+    def add_patch(payload):
+        same = next(p for p in payload["pairs"] if p["class"] == "same")
+        same["expected_patch"] = dict(same["right"])
+        same["expected_patch"]["description"] = "folded in"
+
+    patched = read_pairs(rewritten(tmp_path, add_patch))
+    carrying = [p for p in patched.pairs if p.expected_patch is not None]
+    assert len(carrying) == 1
+    patch = carrying[0].expected_patch
+    assert patch is not None
+    assert patch.description == "folded in"
+    assert patch.qid == carrying[0].right.qid

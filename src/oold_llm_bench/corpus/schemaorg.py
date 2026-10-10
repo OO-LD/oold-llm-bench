@@ -2238,11 +2238,31 @@ def slot_schema(slot: Slot, variant: Variant) -> dict[str, Any]:
     it is the part a constrained arm can actually enforce. Members keep their
     UI spelling, since that is what the document says and what the answer is
     graded against.
+
+    Always an array, because a schema.org property takes one value or several
+    and the documents do. Declared scalar-only, the slot forbids the true
+    answer wherever the document names two: 38.5% of the harvested tasks hold
+    at least one such slot, `actor` holds a list in 83% of the tasks that use
+    it, and an arm then has to join the names into one string and is scored as
+    having invented one value and missed two. A grammar that cannot express
+    the answer is not a stricter grammar.
+
+    An array and not ``anyOf`` of scalar and array, which was measured and
+    reverted. Under the union claude-sonnet-5 fell from 0.304 to 0.000,
+    answering ``{"entities": "<json string>"}`` with every value wrapped as
+    ``{"value": ...}``. A union is only free where a grammar enforces it, and
+    this corpus is also run against arms whose schema is advisory. One shape
+    for every slot is the instruction those arms can follow.
+
+    A one-element array costs nothing at scoring time: the grader flattens a
+    list into one triple per value, so ``["X"]`` and ``"X"`` score alike.
+    Uniform across slots and not narrowed per task, since telling one slot it
+    may hold two values would say how many to find, which is the question.
     """
-    built: dict[str, Any] = {"type": _JSON_TYPE.get(slot.kind.name, "string")}
+    one: dict[str, Any] = {"type": _JSON_TYPE.get(slot.kind.name, "string")}
     if slot.kind is Kind.ENUM and slot.choices:
-        built["enum"] = list(slot.choices)
-    return built
+        one["enum"] = list(slot.choices)
+    return {"type": "array", "items": one}
 
 
 def link_schema() -> dict[str, Any]:
@@ -2493,7 +2513,7 @@ def top_level_sets(classes: list[SchemaClass], pool: list[SchemaClass] | None = 
 
     A catalogue is a choice about what the model is asked to choose between,
     and a count is the wrong way to make it. Twenty-five of 122 leaves the
-    answer in or out by accident: a pasted "Andrea works at Siemens" was once
+    answer in or out by accident: a pasted "Andrea works at ExampleCorp" was once
     offered 25 classes holding neither Person nor Organization, so the only
     fitting class was Thing, which declares no links, and the edge had nowhere
     to go.

@@ -719,6 +719,9 @@ def load_entities(
             corpus=CorpusRef(
                 name="wikidata-schemaorg",
                 source=Source.BULK,
+                # A lead names the subject's founder, its city and its parent
+                # organisation, and only the subject is recorded.
+                exhaustive=False,
                 document_id=entity.qid,
                 content_hash=entity.sha256,
                 url=entity.url,

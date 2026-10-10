@@ -25,13 +25,20 @@ could not decide.
 *What the pair carries.* Both Q-ids, both entity states, the class, and the
 provenance of the truth. For a merge the state is the state **before** the
 merge, recovered for each side from its own history, because the post-merge
-item already contains the answer. The two pre-merge revision ids, the merge
-timestamp and the merge editor are carried with it, so the decision can be
-read back. ``P1889`` and ``P460`` pairs carry the current state of both items
-and the statement that asserts the class; neither the editor nor the date of
-that statement is recorded, because finding the revision that introduced a
-statement costs a search over the item's history and the class does not depend
-on it.
+item already contains the answer to *that* question. The two pre-merge
+revision ids, the merge timestamp and the merge editor are carried with it,
+so the decision can be read back. ``P1889`` and ``P460`` pairs carry the
+current state of both items and the statement that asserts the class; neither
+the editor nor the date of that statement is recorded, because finding the
+revision that introduced a statement costs a search over the item's history
+and the class does not depend on it.
+
+A merge pair also carries :attr:`Pair.expected_patch`, the target's state
+*after* the merge, where the harvest recovered it. This is a different
+question from dedup and the one the pre-merge states alone cannot answer: not
+whether the two sides are one entity, but what folding them was supposed to
+produce. A sequence built from a merge pair presents the two pre-merge states
+one at a time and scores a resolver's merge against this.
 
 *Why the states are trimmed the way they are.* An identifier decides more of
 this corpus than a name does, so every claim property survives, with its
@@ -350,6 +357,17 @@ class Pair:
     ``docs/dedup_kill_test_judgements.tsv`` instead, and the header says how
     many pairs carry one.
     """
+    expected_patch: EntityState | None = None
+    """The target as the merge left it, for pairs whose ``kind`` is
+    ``merge``. Absent for the two statement classes, which record no merge,
+    and for a merge pair whose post-merge revision the harvest could not
+    recover.
+
+    What a resolver's merge is scored against: :attr:`left` and :attr:`right`
+    are the two pre-merge states a sequence corpus presents one at a time,
+    and this is the only place in the identity corpus that records what
+    folding them was supposed to produce, rather than only that they should
+    be folded."""
 
 
 @dataclass(frozen=True)
@@ -478,6 +496,7 @@ def _pair(entry: dict[str, Any]) -> Pair:
         shares_property=bool(entry["shares_property"]),
         scored=bool(entry.get("scored", True)),
         note=entry.get("note"),
+        expected_patch=_state(entry["expected_patch"]) if entry.get("expected_patch") else None,
     )
 
 

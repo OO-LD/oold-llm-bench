@@ -262,6 +262,15 @@ def build_same(
             checked[verdict] += 1
         left = written_state(row["src"], row["src_pre"], row["src_pre_revid"], row["src_pre_ts"])
         right = written_state(row["tgt"], row["tgt_pre"], row["tgt_pre_revid"], row["tgt_pre_ts"])
+        # Absent where the probe could not recover it, which the identity
+        # corpus already tolerates for other fields: a merge still has a
+        # same/different/unclear truth without it, and a pair with none is
+        # simply not usable for the patch question, not unusable outright.
+        expected_patch = (
+            written_state(row["tgt"], row["tgt_post"], row["tgt_post_revid"], row["tgt_post_ts"])
+            if row.get("tgt_post")
+            else None
+        )
         kept.append({
             "class": IdentityClass.SAME.value,
             "order": row.get("draw_index", 0),
@@ -280,6 +289,7 @@ def build_same(
             "scored": verdict in (None, "correct"),
             "note": None if verdict in (None, "correct") else f"a hand check of this merge returned {verdict}",
             "stratum": types_of(row["tgt_pre"])[:1],
+            "expected_patch": expected_patch,
         })
     return kept, excluded, len(seen), checked
 

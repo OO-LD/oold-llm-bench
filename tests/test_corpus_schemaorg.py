@@ -1845,3 +1845,46 @@ class TestWhatAnEntityIsCalled:
         """Opt-in, so no corpus already measured moves underneath a run."""
         rng, other = random.Random(3), random.Random(3)  # noqa: S311 - same
         assert draw(CLASSES, rng, 2, 4) == draw(CLASSES, other, 2, 4, named=False)
+
+
+class TestASlotThatTakesSeveralValues:
+    """A document naming two actors has a true answer the schema must admit.
+
+    Declared scalar-only, the slot forbids it: an arm has to join the names
+    into one string, and is then scored as having invented one value and
+    missed two. 38.5% of the harvested tasks hold at least one such slot.
+    """
+
+    def _slot(self):
+        return next(slot for cls in CLASSES for slot in cls.slots if slot.kind is not Kind.ENUM)
+
+    def test_a_slot_holds_a_list(self):
+        assert schemaorg.slot_schema(self._slot(), Variant.NATIVE) == {
+            "type": "array",
+            "items": {"type": "string"},
+        }
+
+    def test_no_union_keyword_is_used(self):
+        """`anyOf` of scalar and array was measured and reverted: claude-sonnet-5
+        fell from 0.304 to 0.000 under it, double-encoding the whole answer. A
+        union is only free where a grammar enforces it, and this corpus also
+        runs against arms whose schema is advisory."""
+        built = schemaorg.slot_schema(self._slot(), Variant.NATIVE)
+        assert "anyOf" not in built
+        assert not isinstance(built["type"], list)
+
+    def test_an_enumeration_stays_closed_inside_the_list(self):
+        slot = next(s for cls in CLASSES for s in cls.slots if s.kind is Kind.ENUM and s.choices)
+        built = schemaorg.slot_schema(slot, Variant.NATIVE)
+        assert built["items"]["enum"] == list(slot.choices)
+
+    def test_a_list_answer_scores_as_two_values_and_not_one(self):
+        """The half of the fix that lives in the grader, pinned beside it."""
+        produced = make_triples("e1", {"actor": ["Kevin Spacey", "Robin Wright"]})
+        assert sorted(str(t.value) for t in produced) == ["Kevin Spacey", "Robin Wright"]
+
+    def test_one_value_in_a_list_scores_as_a_bare_value(self):
+        """What makes the uniform array free: `["X"]` and `"X"` score alike."""
+        assert [t.value for t in make_triples("e1", {"name": ["X"]})] == [
+            t.value for t in make_triples("e1", {"name": "X"})
+        ]
