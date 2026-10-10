@@ -1519,7 +1519,11 @@ class TestSequenceCorpus:
         Agreement decides it, so no judge is asked and none is needed.
         """
         corpus = load_schemaorg()
-        tasks = sequence_tasks(corpus, count=1, seed=5, n_documents=3)
+        # No contradiction to fold. Whether a conflicting value is kept beside
+        # the first is a question about merging, asked where merging is tested;
+        # here the three steps state different parts of one entity and the
+        # assertion is that they come back together.
+        tasks = sequence_tasks(corpus, count=1, seed=5, n_documents=3, conflict_rate=0.0)
         options = Options(orchestration="segmented", model="gpt-5-mini", catalogue_size=None)
         state = GraphState()
         for task in tasks:

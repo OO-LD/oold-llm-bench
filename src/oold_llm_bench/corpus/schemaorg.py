@@ -262,6 +262,7 @@ __all__ = [
     "Kind",
     "Labelling",
     "Link",
+    "Nested",
     "Notation",
     "SchemaClass",
     "Slot",
@@ -448,6 +449,34 @@ class Link:
 
 
 @dataclass(frozen=True)
+class Nested:
+    """One property whose value is an object the document carries in place.
+
+    The third thing a schema.org property can hold. A :class:`Slot` is a
+    literal the document spells out, a :class:`Link` is a reference to an
+    entity the document states somewhere else, and this is the entity itself,
+    standing where the property stands. Nothing on the page points at it, so
+    an answer has to produce the object rather than reach one, which is why it
+    is held apart from both.
+
+    ``Person.address`` is the shape: ``Text`` or an embedded
+    ``PostalAddress``. A reader that takes the text branch alone has the
+    property down as an array of strings and the address nowhere.
+    """
+
+    name: str
+    ranges: tuple[str, ...]
+    """The classes the property may embed, as the projection names them.
+
+    A tuple for the reason :attr:`Link.ranges` is one, and 42 declarations in
+    the collection need it: ``baseSalary`` embeds a ``MonetaryAmount`` or a
+    ``PriceSpecification``, and keeping only the first would say the property
+    admits half of what it admits."""
+    description: str = ""
+    inherited: bool = False
+
+
+@dataclass(frozen=True)
 class Edge:
     """One drawn link: where it points, and what the document calls that."""
 
@@ -461,8 +490,8 @@ class Edge:
     without the rest of the draw in hand."""
 
 
-_Property = TypeVar("_Property", Slot, Link)
-"""A slot or a link. The two are inherited by one rule and nothing else."""
+_Property = TypeVar("_Property", Slot, Link, Nested)
+"""A slot, a link or a nested object. All three are inherited by one rule."""
 
 
 @dataclass(frozen=True)
@@ -472,6 +501,12 @@ class SchemaClass:
     name: str
     slots: tuple[Slot, ...]
     links: tuple[Link, ...] = ()
+    nested: tuple[Nested, ...] = ()
+    """The properties that embed an object instead of naming one.
+
+    Kept beside the slots and the links rather than among them, for the
+    reason the links are: the three are answered in three different shapes,
+    and a draw has to ask for one of them and not another."""
     parents: tuple[str, ...] = ()
     """Every class named in ``allOf``, in the order the schema names them.
 
@@ -507,6 +542,18 @@ class SchemaClass:
         is and not which class.
         """
         return tuple(link for link in self.links if not link.inherited)
+
+    @property
+    def own_nested(self) -> tuple[Nested, ...]:
+        """The nested properties this class declares itself.
+
+        The preference :attr:`own_links` states, for the same reason. An
+        inherited embedding belongs to the ancestor that declared it, and over
+        the describable classes inheritance turns 159 declared nested
+        properties into 309, so a set that counted them would describe a class
+        by the addresses and quantitative values an ancestor admits.
+        """
+        return tuple(item for item in self.nested if not item.inherited)
 
     @property
     def has_slots(self) -> bool:
@@ -679,6 +726,48 @@ def _link_for(name: str, definition: dict) -> Link | None:
     )
 
 
+def _nested_for(name: str, definition: dict, datatypes: dict[str, DataType]) -> Nested | None:
+    """One property as an embedded object, or ``None`` when no branch is one.
+
+    A branch that is a bare ``$ref`` at a class the datatype walk did not
+    reduce to a literal is an object the document carries in place. Two other
+    shapes say something else with the same keyword and are ruled out by the
+    keys beside it: a ``$ref`` into ``#/$defs/member`` is one member of a
+    closed enumeration and reaches the page as a string, and a branch carrying
+    ``x-oold-range`` is a reference to an entity stated elsewhere. Over the
+    collection the separation is exact, no member branch lacking a range and
+    no object branch carrying one, so neither shape needs a tie-break.
+
+    What counts as a literal is :func:`_resolve_datatypes`'s answer rather
+    than a list of names, because schema.org models two of its datatypes as
+    classes: ``Duration`` and ``Email`` are ``Text`` with a format, and
+    reading them as objects would take 10 ``duration`` properties and every
+    email slot out of the literals.
+    """
+    if name in EXCLUDED_PROPERTIES or name.endswith("_text"):
+        return None
+    items = definition.get("items") if definition.get("type") == "array" else definition
+    if not isinstance(items, dict):
+        return None
+    ranges: list[str] = []
+    for branch in _branches(items):
+        ref = branch.get("$ref")
+        if not isinstance(ref, str) or branch.get("x-oold-range") is not None:
+            continue
+        if "#" in ref or not ref.endswith(_SUFFIX):
+            continue
+        target = ref[: -len(_SUFFIX)]
+        if target not in datatypes:
+            ranges.append(target)
+    if not ranges:
+        return None
+    return Nested(
+        name=name,
+        ranges=tuple(dict.fromkeys(ranges)),
+        description=(definition.get("description") or "").strip(),
+    )
+
+
 def _parents_of(schema: dict) -> tuple[str, ...]:
     above: list[str] = []
     for entry in schema.get("allOf") or []:
@@ -689,9 +778,19 @@ def _parents_of(schema: dict) -> tuple[str, ...]:
 
 
 def _declared_slots(schema: dict, raw: dict[str, dict], datatypes: dict[str, DataType]) -> tuple[Slot, ...]:
+    """The literal-valued properties a class declares.
+
+    A property that also embeds an object is not one of these: ``address`` is
+    ``Text`` or a ``PostalAddress``, and counting it among the literals puts
+    it down as an array of strings with the address nowhere. Over the
+    collection the rule moves 99 declarations out of the literals, ``address``
+    and ``amount`` among them, and it narrows the describable pool with them,
+    since a class whose declared slots fall below three is no longer one a
+    document can be built from.
+    """
     found: list[Slot] = []
     for name, definition in (schema.get("properties") or {}).items():
-        if not isinstance(definition, dict):
+        if not isinstance(definition, dict) or _nested_for(name, definition, datatypes) is not None:
             continue
         slot = _slot_for(name, definition, raw, datatypes)
         if slot is not None:
@@ -699,21 +798,55 @@ def _declared_slots(schema: dict, raw: dict[str, dict], datatypes: dict[str, Dat
     return tuple(found)
 
 
-def _declared_links(schema: dict, raw: dict[str, dict], datatypes: dict[str, DataType]) -> tuple[Link, ...]:
-    """The node-valued properties a class declares.
+def _reads_as_link(name: str, definition: dict, raw: dict[str, dict], datatypes: dict[str, DataType]) -> bool:
+    """Whether the loader reads this property as a reference to an entity.
 
-    A property that resolves to a literal is never one of these, however many
-    node targets its range also offers. ``amount`` is a ``Number`` or a
-    ``MonetaryAmount`` and a document stating the number satisfies it, so it
-    stays a slot and the corpus never asks for it both ways.
+    A property that resolves to a literal is never one, however many node
+    targets its range also offers. ``logo`` is a ``URL`` or a reference to an
+    ``ImageObject`` and a document stating the URL satisfies it, so it stays
+    a slot and the corpus never asks for it both ways.
     """
+    return _link_for(name, definition) is not None and _slot_for(name, definition, raw, datatypes) is None
+
+
+def _declared_links(schema: dict, raw: dict[str, dict], datatypes: dict[str, DataType]) -> tuple[Link, ...]:
+    """The node-valued properties a class declares, by :func:`_reads_as_link`."""
     found: list[Link] = []
     for name, definition in (schema.get("properties") or {}).items():
-        if not isinstance(definition, dict) or _slot_for(name, definition, raw, datatypes) is not None:
+        if not isinstance(definition, dict) or not _reads_as_link(name, definition, raw, datatypes):
             continue
         link = _link_for(name, definition)
         if link is not None:
             found.append(link)
+    return tuple(found)
+
+
+def _declared_nested(schema: dict, raw: dict[str, dict], datatypes: dict[str, DataType]) -> tuple[Nested, ...]:
+    """The object-valued properties a class declares.
+
+    A property already read as a link is not one of these. ``location``
+    offers an IRI to a ``Place`` beside an embedded ``PostalAddress``, and 50
+    declarations in the collection are shaped that way; reading them as
+    embeddings would take the relations the linked corpus is drawn from out
+    of :attr:`SchemaClass.own_links`.
+
+    That leaves a cycle to break, because the three pairwise rules close on
+    each other: a literal outranks a link, an embedding outranks a literal,
+    and a link outranks an embedding. Seven declarations hit all three at
+    once, ``associatedDisease`` among them, which is a ``URL``, a reference
+    to a ``MedicalCondition`` and an embedded ``PropertyValue``. They are
+    read as embeddings, and the reason is that the first rule has already
+    fired: a property offering a literal is not a link, so reading it as an
+    embedding takes nothing out of the relations and only moves it out of the
+    literals, which is what the second rule asks for.
+    """
+    found: list[Nested] = []
+    for name, definition in (schema.get("properties") or {}).items():
+        if not isinstance(definition, dict) or _reads_as_link(name, definition, raw, datatypes):
+            continue
+        nested = _nested_for(name, definition, datatypes)
+        if nested is not None:
+            found.append(nested)
     return tuple(found)
 
 
@@ -733,6 +866,12 @@ def load_classes(directory: Path) -> list[SchemaClass]:
     Links are resolved the same way and kept beside the slots rather than
     among them, because the two are graded differently and a draw has to ask
     for one or the other.
+
+    Nested objects are the third set, resolved and kept apart for the same
+    reason. A property holds a literal, a reference or an object, and two
+    readings are not enough to place the third: with only the first two,
+    ``address`` comes out an array of strings and the ``PostalAddress`` it
+    also admits comes out nowhere.
     """
     raw = {}
     for path in sorted(directory.glob("*.schema.json")):
@@ -743,12 +882,14 @@ def load_classes(directory: Path) -> list[SchemaClass]:
     datatypes = _resolve_datatypes(raw)
     slots = {name: _declared_slots(schema, raw, datatypes) for name, schema in raw.items()}
     links = {name: _declared_links(schema, raw, datatypes) for name, schema in raw.items()}
+    nested = {name: _declared_nested(schema, raw, datatypes) for name, schema in raw.items()}
 
     return [
         SchemaClass(
             name=name,
             slots=_effective(name, parents, slots),
             links=_effective(name, parents, links),
+            nested=_effective(name, parents, nested),
             parents=parents.get(name, ()),
             label=(schema.get("title") or name).strip(),
             description=(schema.get("description") or "").strip(),
@@ -767,10 +908,10 @@ def _effective(
 ) -> tuple[_Property, ...]:
     """A class's own properties, followed by the ones it takes from above.
 
-    Slots and links are inherited by the same rule, so one walk serves both.
-    A name a class declares itself always wins over the ancestor's, and
-    everything that arrives from above is marked so a draw can prefer what
-    the class says about itself.
+    Slots, links and nested objects are inherited by the same rule, so one
+    walk serves all three. A name a class declares itself always wins over
+    the ancestor's, and everything that arrives from above is marked so a
+    draw can prefer what the class says about itself.
     """
     merged = list(declared.get(name, ()))
     taken = {item.name for item in merged}

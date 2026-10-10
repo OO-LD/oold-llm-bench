@@ -274,6 +274,84 @@ def write_corpus(directory) -> None:
                 },
             },
         },
+        "Duration": {"title": "Duration", "$ref": "Text.schema.json", "format": "duration"},
+        "PostalAddress": {
+            "title": "PostalAddress",
+            "allOf": [{"$ref": "Thing.schema.json"}],
+            "properties": {
+                "streetAddress": {"type": "array", "items": {"$ref": "Text.schema.json"}},
+                "postalCode": {"type": "array", "items": {"$ref": "Text.schema.json"}},
+            },
+        },
+        "QuantitativeValue": {
+            "title": "QuantitativeValue",
+            "allOf": [{"$ref": "Thing.schema.json"}],
+            "properties": {
+                "value": {"type": "array", "items": {"$ref": "Number.schema.json"}},
+                "unitText": {"type": "array", "items": {"$ref": "Text.schema.json"}},
+            },
+        },
+        "Residence": {
+            "title": "Residence",
+            "allOf": [{"$ref": "Thing.schema.json"}],
+            "properties": {
+                "address": {
+                    "description": "Physical address of the item.",
+                    "type": "array",
+                    "items": {"anyOf": [{"$ref": "Text.schema.json"}, {"$ref": "PostalAddress.schema.json"}]},
+                },
+                "address_text": {"type": "array", "items": {"$ref": "Text.schema.json"}},
+                "floorSize": {"$ref": "QuantitativeValue.schema.json"},
+                "amenityFeature": {
+                    "type": "array",
+                    "items": {
+                        "anyOf": [
+                            {"$ref": "PostalAddress.schema.json"},
+                            {"$ref": "QuantitativeValue.schema.json"},
+                        ]
+                    },
+                },
+                "location": {
+                    "type": "array",
+                    "items": {
+                        "anyOf": [
+                            {"type": "string", "format": "iri-reference", "x-oold-range": "Place.schema.json"},
+                            {"$ref": "PostalAddress.schema.json"},
+                        ]
+                    },
+                },
+                "logo": {
+                    "type": "array",
+                    "items": {
+                        "anyOf": [
+                            {"$ref": "Text.schema.json"},
+                            {"type": "string", "format": "iri-reference", "x-oold-range": "Organization.schema.json"},
+                        ]
+                    },
+                },
+                "hasMeasurement": {
+                    "type": "array",
+                    "items": {
+                        "anyOf": [
+                            {"$ref": "Text.schema.json"},
+                            {"type": "string", "format": "iri-reference", "x-oold-range": "Organization.schema.json"},
+                            {"$ref": "QuantitativeValue.schema.json"},
+                        ]
+                    },
+                },
+                "leaseLength": {"type": "array", "items": {"$ref": "Duration.schema.json"}},
+            },
+        },
+        "SingleFamilyResidence": {
+            "title": "SingleFamilyResidence",
+            "allOf": [{"$ref": "Residence.schema.json"}],
+            "properties": {
+                "numberOfRooms": {
+                    "type": "array",
+                    "items": {"anyOf": [{"$ref": "Number.schema.json"}, {"$ref": "QuantitativeValue.schema.json"}]},
+                }
+            },
+        },
     }
     for name, schema in files.items():
         (directory / f"{name}.schema.json").write_text(json.dumps(schema), encoding="utf-8")
@@ -340,9 +418,9 @@ class TestLoadClasses:
         assert {link.name for link in corpus["Ticket"].own_links} == {"issuedBy"}
 
     def test_a_property_that_resolves_to_a_literal_is_never_a_link(self, corpus):
-        """``totalPrice`` is a Number or an Organization, and the number wins."""
-        assert "totalPrice" not in {link.name for link in corpus["Ticket"].links}
-        assert next(slot for slot in corpus["Ticket"].slots if slot.name == "totalPrice").kind is Kind.NUMBER
+        """``logo`` is a Text or a reference to an Organization, and text wins."""
+        assert "logo" not in {link.name for link in corpus["Residence"].links}
+        assert "logo" in {slot.name for slot in corpus["Residence"].slots}
 
     def test_an_enumeration_member_stays_a_closed_list(self, corpus):
         """schema.org models it as a node, and reading it as one would take
@@ -357,9 +435,9 @@ class TestLoadClasses:
         """``issuedBy_text`` is an artefact of the projection, not vocabulary."""
         assert "issuedBy_text" not in {slot.name for slot in corpus["Ticket"].slots}
 
-    def test_a_mixed_range_keeps_its_literal_branch(self, corpus):
-        total = next(slot for slot in corpus["Ticket"].slots if slot.name == "totalPrice")
-        assert total.kind is Kind.NUMBER
+    def test_a_range_that_mixes_a_literal_with_a_reference_keeps_the_literal(self, corpus):
+        logo = next(slot for slot in corpus["Residence"].slots if slot.name == "logo")
+        assert logo.kind is Kind.TEXT
 
     def test_serialisation_properties_are_never_slots(self, corpus):
         names = {slot.name for cls in corpus.values() for slot in cls.slots}
@@ -369,6 +447,122 @@ class TestLoadClasses:
     def test_a_class_carries_its_label_and_description(self, corpus):
         assert corpus["Book"].label == "Book"
         assert corpus["Book"].description == "A book."
+
+
+class TestNestedObjects:
+    """The third thing a property can hold, beside a literal and a reference."""
+
+    def test_an_object_valued_property_is_read_as_nested(self, corpus):
+        """``floorSize`` is a QuantitativeValue written where the property is."""
+        floor_size = next(item for item in corpus["Residence"].nested if item.name == "floorSize")
+        assert floor_size.ranges == ("QuantitativeValue",)
+
+    def test_an_object_valued_property_is_neither_a_slot_nor_a_link(self, corpus):
+        residence = corpus["Residence"]
+        assert "floorSize" not in {slot.name for slot in residence.slots}
+        assert "floorSize" not in {link.name for link in residence.links}
+
+    def test_a_literal_beside_an_object_is_read_as_the_object(self, corpus):
+        """``address`` is Text or a PostalAddress, and counting it among the
+        literals puts it down as an array of strings with the address nowhere."""
+        residence = corpus["Residence"]
+        assert "address" not in {slot.name for slot in residence.slots}
+        assert next(item for item in residence.nested if item.name == "address").ranges == ("PostalAddress",)
+
+    def test_the_same_rule_holds_for_a_number_beside_an_object(self, corpus):
+        """``totalPrice`` is a Number or an Organization, and the object wins."""
+        assert "totalPrice" not in {slot.name for slot in corpus["Ticket"].slots}
+        assert "totalPrice" in {item.name for item in corpus["Ticket"].nested}
+
+    def test_a_reference_outranks_an_embedding(self, corpus):
+        """``location`` offers an IRI to a Place beside an embedded address.
+
+        Reading it as the embedding would take the relation out of the links
+        the linked corpus draws its pairs from.
+        """
+        residence = corpus["Residence"]
+        assert "location" in {link.name for link in residence.links}
+        assert "location" not in {item.name for item in residence.nested}
+
+    def test_a_property_offering_all_three_readings_is_embedded(self, corpus):
+        """``hasMeasurement`` is a Text, a reference and an object at once.
+
+        The three pairwise rules close on each other there, and the embedding
+        is what breaks the cycle: the literal has already ruled the reference
+        out, so nothing is taken from the links.
+        """
+        residence = corpus["Residence"]
+        assert "hasMeasurement" in {item.name for item in residence.nested}
+        assert "hasMeasurement" not in {slot.name for slot in residence.slots}
+        assert "hasMeasurement" not in {link.name for link in residence.links}
+
+    def test_an_embedding_keeps_every_class_it_may_hold(self, corpus):
+        """A union range is several shapes, and the first is not all of them."""
+        amenity = next(item for item in corpus["Residence"].nested if item.name == "amenityFeature")
+        assert amenity.ranges == ("PostalAddress", "QuantitativeValue")
+
+    def test_an_embedding_carries_the_description_the_schema_gives_it(self, corpus):
+        address = next(item for item in corpus["Residence"].nested if item.name == "address")
+        assert address.description == "Physical address of the item."
+
+    def test_a_datatype_modelled_as_a_class_is_still_a_literal(self, corpus):
+        """``Duration`` is a schema.org class that bottoms out at a string.
+
+        Deciding what a leaf is by a list of names rather than by the
+        datatype walk would read ``leaseLength`` as an object.
+        """
+        residence = corpus["Residence"]
+        assert next(slot for slot in residence.slots if slot.name == "leaseLength").kind is Kind.DURATION
+        assert "leaseLength" not in {item.name for item in residence.nested}
+
+    def test_an_enumeration_member_is_not_an_embedding(self, corpus):
+        """The reference carries a fragment, which is a member and not a class."""
+        assert "bookFormat" not in {item.name for item in corpus["Book"].nested}
+
+    def test_the_projection_companion_key_is_not_embedded_either(self, corpus):
+        assert "address_text" not in {item.name for item in corpus["Residence"].nested}
+
+    def test_an_inherited_embedding_is_marked_as_one(self, corpus):
+        house = corpus["SingleFamilyResidence"]
+        assert {item.name for item in house.own_nested} == {"numberOfRooms"}
+        assert next(item for item in house.nested if item.name == "address").inherited is True
+
+    def test_a_class_declares_the_embeddings_it_adds_and_inherits_the_rest(self, corpus):
+        house = corpus["SingleFamilyResidence"]
+        assert {item.name for item in house.nested} >= {"numberOfRooms", "address", "floorSize"}
+
+    def test_the_three_readings_are_disjoint(self, corpus):
+        """A property is a literal, a reference or an object, never two.
+
+        Asserted over every class the corpus holds rather than over the one
+        that motivated the reading, because the rule that settles the order is
+        a rule about the collection and not about a worked example.
+        """
+        for cls in corpus.values():
+            slots = {slot.name for slot in cls.slots}
+            links = {link.name for link in cls.links}
+            nested = {item.name for item in cls.nested}
+            assert not slots & links, cls.name
+            assert not slots & nested, cls.name
+            assert not links & nested, cls.name
+
+    def test_no_property_the_schema_declares_falls_between_the_three(self, corpus):
+        """Every property of the class that carries all four shapes is read."""
+        residence = corpus["Residence"]
+        read = (
+            {slot.name for slot in residence.own_slots}
+            | {link.name for link in residence.own_links}
+            | {item.name for item in residence.own_nested}
+        )
+        assert read == {
+            "address",
+            "amenityFeature",
+            "floorSize",
+            "hasMeasurement",
+            "leaseLength",
+            "location",
+            "logo",
+        }
 
 
 class TestDescribableClasses:

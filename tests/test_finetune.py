@@ -514,6 +514,32 @@ def test_a_run_counts_how_its_failed_cells_failed():
     ]
     assert run.error_kinds() == {"OpenAIRateLimitError": 2, "TimeoutError": 1}
     assert run.describe()["error_kinds"] == {"OpenAIRateLimitError": 2, "TimeoutError": 1}
+    # The sentence and not only the type, most common first. A grid that lost
+    # every cell to one cause says which cause in the summary.
+    assert run.error_messages() == {"OpenAIRateLimitError: 429": 2, "TimeoutError: slow": 1}
+    assert run.describe()["error_messages"] == {"OpenAIRateLimitError: 429": 2, "TimeoutError: slow": 1}
+
+
+def test_an_error_message_is_written_down_without_the_credential_in_it():
+    """A provider quotes the request it refused, and the request is signed."""
+    from oold_llm_bench.finetune.dataset import _PROMPT_MODEL
+    from oold_llm_bench.runner import ExperimentConfig
+    from oold_llm_bench.runner.execute import CellOutcome, ExperimentRun
+
+    tasks = _corpus(count=1).tasks
+    condition = lean_condition()
+    config = ExperimentConfig(name="t", conditions=[condition], models=[_PROMPT_MODEL], tasks=tasks)
+    cell = Cell(condition=condition, model=_PROMPT_MODEL, task=tasks[0], repetition=1)
+    run = ExperimentRun(config=config)
+    run.outcomes = [
+        CellOutcome(cell=cell, error="AuthError: 401 for Authorization: Bearer sk-abcd1234efgh"),
+        CellOutcome(cell=cell, error="ValueError: " + "path " * 200),
+    ]
+    reported = list(run.error_messages())
+    assert "sk-abcd1234efgh" not in " ".join(reported)
+    assert "[redacted]" in reported[0]
+    assert all(len(message) <= 310 for message in reported)
+    assert reported[1].endswith("[...]")
 
 
 def test_a_written_document_narrows_the_pool_on_both_sides():

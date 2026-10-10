@@ -13,6 +13,7 @@ could never run at the same time. A model is passed in as a value instead.
 
 from __future__ import annotations
 
+import re
 import traceback
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -99,6 +100,25 @@ class ExperimentRun:
             kinds[kind] = kinds.get(kind, 0) + 1
         return kinds
 
+    def error_messages(self, limit: int = 5) -> dict[str, int]:
+        """What the failed cells actually said, counted by distinct message.
+
+        The type alone does not say what went wrong. A grid whose condition
+        names an arm the tasks cannot satisfy fails every cell with one
+        ``ValueError``, and a summary reporting only the type sends the reader
+        to re-run a cell by hand to read the sentence that was already raised.
+
+        The most common ``limit`` messages, because a run that lost 40 cells to
+        one cause and 2 to another should say so in that order. Scrubbed, since
+        a provider error quotes the request it refused.
+        """
+        counts: dict[str, int] = {}
+        for outcome in self.failures():
+            message = _scrubbed(str(outcome.error or "unknown"))
+            counts[message] = counts.get(message, 0) + 1
+        ranked = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+        return dict(ranked[:limit])
+
     def describe(self) -> dict[str, Any]:
         return {
             "config": self.config.describe(),
@@ -107,9 +127,33 @@ class ExperimentRun:
             "n_outcomes": len(self.outcomes),
             "n_failures": len(self.failures()),
             "error_kinds": self.error_kinds(),
+            "error_messages": self.error_messages(),
             "saturated_conditions": self.saturated(),
             "mean_primary": {key: round(self.mean_primary(key), 4) for key in self.by_condition()},
         }
+
+
+_SECRET = re.compile(
+    r"(?i)\b(?:bearer\s+\S+|(?:api[-_]?key|access[-_]?token|authorization|secret)\s*[=:]\s*\S+|sk-[A-Za-z0-9_-]{8,})"
+)
+"""What a provider error may quote back out of the request it refused.
+
+Scrubbed because a summary is written to disk and some of them are published,
+and an authentication failure is exactly the error whose message carries the
+credential that caused it.
+"""
+
+_LONGEST_MESSAGE = 300
+"""Where a message is cut. A validator naming every failing path runs to
+thousands of characters and says the same thing as its first line."""
+
+
+def _scrubbed(message: str) -> str:
+    """One error message, safe to write down."""
+    cleaned = _SECRET.sub("[redacted]", " ".join(message.split()))
+    if len(cleaned) <= _LONGEST_MESSAGE:
+        return cleaned
+    return cleaned[:_LONGEST_MESSAGE] + " [...]"
 
 
 def read_answer(cell: Cell, result: Any) -> TripleSet:
