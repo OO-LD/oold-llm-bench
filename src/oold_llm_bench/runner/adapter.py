@@ -34,6 +34,7 @@ __all__ = [
     "build_agent",
     "build_enforcement",
     "build_request",
+    "offered_catalogue",
 ]
 
 ANSWER_SCHEMA: dict[str, Any] = {
@@ -80,12 +81,46 @@ put it.
 """
 
 
+def offered_catalogue(cell: Cell) -> list[str]:
+    """The classes this cell's condition lets the task offer, in the task's order.
+
+    One task, two catalogues. With ``embed_nested`` on, a value object is
+    reached through the object slot of whatever holds it, and offering it as a
+    class an entity may be planned for as well gives the same entity two
+    routes. The top-level one wins: measured with claude-haiku-4-5 on a
+    document stating a person and their address, the answer is byte-identical
+    with the axis off and on, and the same document offered ``Person`` alone
+    nests the address on the first attempt. With the axis off the exclusion
+    would leave the class unreachable, since nothing then offers it as an
+    object either, so the catalogue stays whole.
+
+    Resolved per cell rather than written into the task, because the pair that
+    measures the axis runs one task set under both conditions and a task
+    record can describe only one catalogue. Which one ran is in the record:
+    ``catalogue_hash`` is taken from here.
+
+    A task offering nothing but value objects is refused rather than run with
+    no catalogue at all, which would swap the arm for a different one and
+    report it under the arm's name.
+    """
+    catalogue = list(cell.task.catalogue or ())
+    if not cell.condition.embed_nested or not catalogue:
+        return catalogue
+    excluded = set(cell.task.value_objects or ())
+    kept = [name for name in catalogue if name not in excluded]
+    if not kept:
+        raise ValueError(f"task {cell.task.id} offers value objects only, so embed_nested leaves no class to plan for")
+    return kept
+
+
 def _catalogue_of(cell: Cell) -> tuple[str, ...] | None:
     """The class list this cell offers, trimmed to the declared size.
 
-    The classes a task needs are always kept. Trimming them out would change
-    what the task is asking, not how large the catalogue is, and the catalogue
-    size is the variable under test.
+    The classes a task needs are always kept, as long as the condition offers
+    them at all. Trimming them out would change what the task is asking, not
+    how large the catalogue is, and the catalogue size is the variable under
+    test; adding back one the condition excluded would undo the exclusion on
+    exactly the tasks it was meant for.
 
     The result is then shuffled on the task id. Keeping the needed classes at
     the front, the order selection takes them in, would put the answer at
@@ -94,14 +129,15 @@ def _catalogue_of(cell: Cell) -> tuple[str, ...] | None:
     that bias. Shuffling on the task id rather than at random keeps two runs
     of one config identical.
     """
-    catalogue = list(cell.task.catalogue or ())
+    catalogue = offered_catalogue(cell)
     if not catalogue:
         return None
     limit = cell.condition.catalogue_size
     if limit is None or limit >= len(catalogue):
         return _shuffled(catalogue, cell.task.id)
 
-    needed = [i.class_path for i in cell.task.expected if i.class_path]
+    offered = set(catalogue)
+    needed = [i.class_path for i in cell.task.expected if i.class_path in offered]
     kept = list(dict.fromkeys(needed))
     for name in catalogue:
         if len(kept) >= limit:

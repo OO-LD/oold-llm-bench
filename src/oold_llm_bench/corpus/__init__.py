@@ -84,6 +84,7 @@ from oold_llm_bench.corpus.schemaorg import (
     load_classes,
     resolvable_links,
     top_level_sets,
+    value_object_classes,
     written_value,
 )
 from oold_llm_bench.corpus.schemaorg import generate_task as generate_schemaorg_task
@@ -228,6 +229,7 @@ __all__ = [
     "truthy",
     "unit_identifiable",
     "urlopen_fetcher",
+    "value_object_classes",
     "writable",
     "write_document",
     "written_forms",

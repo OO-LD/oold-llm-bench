@@ -200,6 +200,22 @@ class TaskRecord(BaseModel):
     an empty mapping: a condition asking for an embedding is refused against
     the first and honoured against the second."""
 
+    value_objects: list[str] | None = None
+    """The offered classes that only ever stand inside another entity.
+
+    Keyed the way ``catalogue`` is, so a renamed task names them as it names
+    everything else. Carried by the task for the reason ``embedded_branches``
+    is carried by it: which classes the schema only ever embeds is a fact
+    about the corpus, and the runner holds one task rather than the collection
+    it came from.
+
+    Read by the embedding condition, which takes them out of the catalogue it
+    offers, and by nothing else. Offered as a class an entity may be planned
+    for and as the object of the class that holds it, the top-level route
+    wins: measured with claude-haiku-4-5, the answer is byte-identical with
+    the axis off and on, while the same document offered ``Person`` alone
+    nests the address on the first attempt."""
+
     class_parents: dict[str, list[str]] | None = None
     """Which classes each class inherits from.
 

@@ -129,7 +129,14 @@ class Condition:
     branches, so what the model is asked for is the entity in place rather
     than an edge to one it has to state separately. Refused where the task
     carries no embeddings to add, since a condition that quietly does nothing
-    writes a second row identical to the first."""
+    writes a second row identical to the first.
+
+    On, it also chooses the narrower of the task's two catalogues: a class the
+    schema only ever embeds stops being a class an entity may be planned for,
+    because offered both routes a model takes the top-level one and leaves the
+    slot empty. Off, the same exclusion would leave that class unreachable.
+    :func:`~oold_llm_bench.runner.adapter.offered_catalogue` resolves which
+    one ran and ``catalogue_hash`` records it."""
 
     @property
     def key(self) -> str:

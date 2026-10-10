@@ -20,6 +20,7 @@ from oold_llm_bench.runner import (
     agent_factory,
     build_agent,
     build_request,
+    offered_catalogue,
     run_experiment,
 )
 
@@ -567,3 +568,87 @@ class TestTheEmbeddingCondition:
         """``None`` is the corpus never having looked. An empty mapping is a
         true statement about classes that declare no object-valued property."""
         assert build_request(self.cell_for(embed_nested=True, embedded={})).schema is not None
+
+
+class TestAValueObjectIsNotAClassToPlanAnEntityFor:
+    """The catalogue the embedding condition offers, against the one it does not.
+
+    Offered as a class an entity may be planned for and as the object of the
+    class that holds it, a value object is reached twice over and the
+    top-level route wins: measured with claude-haiku-4-5, the payload is
+    byte-identical with the axis off and on. Offered only the holder, the same
+    document nests the address on the first attempt.
+    """
+
+    def task_with(self, value_objects, embedded=None):
+        base = TestACorpusThatBringsItsOwnShape().task_with_shape()
+        return base.model_copy(
+            update={
+                "embedded_branches": EMBEDDED if embedded is None else embedded,
+                "value_objects": list(value_objects),
+            }
+        )
+
+    def cell_for(self, *, embed_nested: bool, value_objects=("Mass",), size: int | None = 3, embedded=None):
+        return Cell(
+            condition=Condition(
+                arm="schema-dump-catalog-enforced",
+                catalogue_size=size,
+                pin_units=False,
+                embed_nested=embed_nested,
+            ),
+            model=ModelSpec(model="m", provider_profile="openai", model_version="1"),
+            task=self.task_with(value_objects, embedded),
+            repetition=1,
+        )
+
+    def offered(self, cell):
+        return set(build_agent(cell, ScriptedClient()).enforcement.catalogue or ())
+
+    def test_the_axis_off_offers_the_catalogue_the_task_declares(self):
+        """Excluded there, the class would be unreachable: nothing offers it as
+        an object and nothing can point at it."""
+        cell = self.cell_for(embed_nested=False)
+        assert offered_catalogue(cell) == cell.task.catalogue
+        assert self.offered(cell) == set(CATALOGUE)
+
+    def test_the_axis_on_leaves_it_out_of_the_catalogue(self):
+        assert self.offered(self.cell_for(embed_nested=True)) == {"Length", "Duration"}
+
+    def test_a_class_the_task_calls_no_value_object_stays_either_way(self):
+        """The bucket that is neither embedded nor pointed at: nothing else
+        would offer it, so an exclusion by anything but the embedding test
+        would drop it for good."""
+        for embed_nested in (False, True):
+            assert "Duration" in self.offered(self.cell_for(embed_nested=embed_nested))
+
+    def test_the_class_that_embeds_it_still_carries_the_object_slot_for_it(self):
+        """Which is the route the entity is reached by once the top-level one
+        is gone."""
+        cell = self.cell_for(embed_nested=True)
+        schema = build_request(cell).schema
+        assert schema is not None
+        properties = schema["properties"]["entities"]["items"]["properties"]
+        assert "madeOf" in properties
+        assert "onlyMass" not in properties
+
+    def test_a_trim_does_not_add_back_a_class_the_condition_took_out(self):
+        """The trim keeps the classes a task needs, and a value object the
+        condition excluded is not needed as a top-level entity any more."""
+        expected = {i.class_path for i in self.task_with(()).expected}
+        cell = self.cell_for(embed_nested=True, value_objects=expected, size=1)
+        assert not self.offered(cell) & expected
+
+    def test_a_catalogue_of_nothing_but_value_objects_is_refused(self):
+        """Running it would offer no catalogue at all, which is a different arm
+        reported under this one's name."""
+        cell = self.cell_for(embed_nested=True, value_objects=CATALOGUE)
+        with pytest.raises(ValueError, match="no class to plan for"):
+            build_request(cell)
+
+    def test_a_task_that_names_none_of_them_is_sent_its_whole_catalogue(self):
+        """``None`` is a corpus that never worked them out, and a corpus
+        without object-valued properties has none to work out."""
+        cell = self.cell_for(embed_nested=True, value_objects=())
+        assert cell.task.value_objects == []
+        assert self.offered(cell) == set(CATALOGUE)

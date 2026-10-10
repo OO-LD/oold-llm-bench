@@ -238,10 +238,16 @@ _NESTED_SLOT = (
     _STEP_CONDITIONS[0],
     replace(_STEP_CONDITIONS[0], embed_nested=True),
 )
-"""One arm, one catalogue, the answer shape with and without a slot to nest in.
+"""One arm, two catalogues, the answer shape with and without a slot to nest in.
 
 Paired on purpose. The cost of the embedding is in the prompt and the gain is
 in the answer, and read apart they are two numbers nobody can divide.
+
+The catalogue moves with the shape. A class the schema only ever embeds is
+left out of the offered set once the slot that holds it exists, because a
+class offered both ways is answered the top-level way and the slot stays
+empty. ``catalogue_hash`` is taken from what each cell offered, so the two
+rows say which list each ran against.
 """
 
 _SCHEMAORG_UNION = tuple(

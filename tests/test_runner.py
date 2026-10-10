@@ -251,6 +251,25 @@ class TestRunning:
         run, _ = self.run_with(lambda cell: PerfectAgent(by_id), grid)
         assert json.dumps(run.describe())
 
+    def test_the_catalogue_hash_names_the_catalogue_the_condition_offered(self):
+        """One task supplies two catalogues, so a hash taken from the task
+        would report the embedding pair as having run against one."""
+        task = tasks(1)[0].model_copy(
+            update={"catalogue": CATALOGUE, "embedded_branches": {}, "value_objects": ["Mass"]}
+        )
+        grid = config(
+            conditions=[
+                Condition(arm="schema-dump-catalog-flat-enforced"),
+                Condition(arm="schema-dump-catalog-flat-enforced", embed_nested=True),
+            ],
+            task_list=[task],
+            runs_per_cell=1,
+        )
+        by_id = {t.id: t for t in grid.tasks}
+        run, _ = self.run_with(lambda cell: PerfectAgent(by_id), grid)
+        hashes = {o.cell.condition.embed_nested: o.record.catalogue_hash for o in run.outcomes}
+        assert hashes[False] != hashes[True]
+
 
 class TestTheControls:
     """If any of these scores, nothing else measured here means anything."""

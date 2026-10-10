@@ -11,6 +11,7 @@ from oold_llm_bench.runner.adapter import (
     build_agent,
     build_enforcement,
     build_request,
+    offered_catalogue,
 )
 from oold_llm_bench.runner.config import Cell, Condition, ExperimentConfig
 from oold_llm_bench.runner.controls import (
@@ -43,6 +44,7 @@ __all__ = [
     "build_enforcement",
     "build_request",
     "control_scores",
+    "offered_catalogue",
     "preflight",
     "read_answer",
     "run_cell",

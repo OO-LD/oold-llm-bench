@@ -169,7 +169,14 @@ def wdc_tasks(per_class: int, pages: Path | None = None) -> list[TaskRecord]:
     fails the decode constraint outright rather than scoring badly, which
     reads as a finding about the corpus and is a missing field.
     """
-    from oold_llm_bench.corpus.schemaorg import Variant, answer_schema, branches_for, embedded_for, load_classes
+    from oold_llm_bench.corpus.schemaorg import (
+        Variant,
+        answer_schema,
+        branches_for,
+        embedded_for,
+        load_classes,
+        value_object_classes,
+    )
     from oold_llm_bench.corpus.wdc import load_tasks
     from oold_llm_bench.playground.corpora import schemas_directory
 
@@ -194,6 +201,10 @@ def wdc_tasks(per_class: int, pages: Path | None = None) -> list[TaskRecord]:
     # answer, so the offered set alone would attach an empty object to every
     # embedding.
     embedded = embedded_for(present, Variant.NATIVE, targets=classes)
+    # Resolved against the whole collection for the reason the embeddings are:
+    # a class is embedded by whoever embeds it, and this catalogue holds five
+    # classes of the collection's nine hundred.
+    value_objects = list(value_object_classes(classes, present))
     lineage = {cls.name: [parent for parent in cls.parents if parent in set(offered)] for cls in present}
     return [
         task.model_copy(
@@ -201,6 +212,7 @@ def wdc_tasks(per_class: int, pages: Path | None = None) -> list[TaskRecord]:
                 "answer_schema": shape,
                 "branches": narrowed,
                 "embedded_branches": embedded,
+                "value_objects": value_objects,
                 "class_parents": lineage,
             }
         )

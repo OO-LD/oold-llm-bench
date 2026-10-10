@@ -51,6 +51,7 @@ from oold_llm_bench.corpus.schemaorg import (
     resolvable_links,
     seed_values,
     spell,
+    value_object_classes,
     written_value,
 )
 from oold_llm_bench.extract.json_answer import extract_json
@@ -2356,3 +2357,61 @@ class TestAGeneratedTaskCarriesTheEmbeddingItDoesNotOffer:
         condition asking for an embedding is honoured rather than refused."""
         task = generate_task(CLASSES, task_id="t", seed=4, n_slots=3, catalogue=("Book",))
         assert task.embedded_branches == {}
+
+
+class TestWhichClassesTheCollectionOnlyEverEmbeds:
+    """Embedded somewhere, pointed at nowhere, which is the schema's own words."""
+
+    def test_a_class_nothing_points_at_and_something_embeds_is_a_value_object(self, corpus):
+        """A PostalAddress stands in the address of whoever lives there, and no
+        property in the collection declares a reference to one."""
+        assert "PostalAddress" in value_object_classes(list(corpus.values()))
+        assert "QuantitativeValue" in value_object_classes(list(corpus.values()))
+
+    def test_a_class_a_link_points_at_is_not_one_even_where_something_embeds_it(self, corpus):
+        """``Ticket.totalPrice`` embeds an Organization and ``Book.author``
+        points at one, so a page can state an Organization in its own right."""
+        assert "Organization" in {t for cls in corpus.values() for item in cls.nested for t in item.ranges}
+        assert "Organization" not in value_object_classes(list(corpus.values()))
+
+    def test_a_class_neither_embedded_nor_pointed_at_stays(self, corpus):
+        """The bucket the rule is written for. Nothing embeds a Book and
+        nothing points at one, and it is still a class a document is about."""
+        derived = value_object_classes(list(corpus.values()))
+        assert "Book" not in derived
+        assert "Ticket" not in derived
+
+    def test_the_pool_chooses_the_candidates_and_the_collection_the_ranges(self, corpus):
+        """A value object is embedded by whoever embeds it, and the holder is
+        often a class too thin for any catalogue to offer."""
+        classes = list(corpus.values())
+        pool = [corpus["PostalAddress"], corpus["Book"]]
+        assert value_object_classes(classes, pool) == ("PostalAddress",)
+        assert value_object_classes([corpus["PostalAddress"]], pool) == ()
+
+    def test_a_generated_task_records_which_of_its_offered_classes_they_are(self, corpus):
+        task = generate_task(
+            list(corpus.values()),
+            task_id="t",
+            seed=4,
+            n_slots=3,
+            draw_from=[corpus["Residence"]],
+            catalogue=("Residence", "PostalAddress", "Book"),
+        )
+        assert task.value_objects == ["PostalAddress"]
+
+    def test_a_renamed_task_names_them_as_it_names_everything_else(self, corpus):
+        """Or the condition would look for native identifiers in an opaque
+        catalogue and exclude nothing."""
+        classes = list(corpus.values())
+        native, renamed = generate_pair(
+            classes,
+            task_id="t",
+            seed=4,
+            n_slots=3,
+            draw_from=[corpus["Residence"]],
+            catalogue=("Residence", "PostalAddress"),
+        )
+        assert native.value_objects == ["PostalAddress"]
+        assert renamed.value_objects == [class_identifier("PostalAddress", Variant.RENAMED)]
+        assert set(renamed.value_objects or ()) <= set(renamed.catalogue or ())

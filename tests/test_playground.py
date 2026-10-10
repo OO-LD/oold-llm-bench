@@ -24,6 +24,7 @@ from typing import Never
 import pytest
 
 from oold_llm_bench.corpus.linked_articles import LINKS_CACHE
+from oold_llm_bench.corpus.schemaorg import value_object_classes
 from oold_llm_bench.experiments.corpora import DOCUMENTS_CACHE
 from oold_llm_bench.extract import extract_json
 from oold_llm_bench.grading.triples import Quantity, Reference, TripleSet, make_triple, normalise_property
@@ -71,6 +72,7 @@ from oold_llm_bench.playground.app import STATE_STYLE, state_html
 from oold_llm_bench.playground.corpora import NAME_SLOT, is_scoreable
 from oold_llm_bench.playground.graph import CLOSE_MATCH_COLOUR, NESTED_COLOUR, PARALLEL_ROUNDNESS, SELF_ANGLE
 from oold_llm_bench.playground.replay import _ids_in
+from oold_llm_bench.runner import offered_catalogue
 from oold_llm_bench.tasks.models import (
     CorpusRef,
     Difficulty,
@@ -1664,6 +1666,73 @@ class TestAPastedDocumentChoosesANamedSet:
         corpus = load_schemaorg()
         with pytest.raises(KeyError, match="unknown class set"):
             paste_task(corpus, "anything", catalogue_set="NotASet")
+
+
+@needs_schemaorg
+class TestTheCatalogueTheEmbeddingConditionOffers:
+    """One collection, two catalogues, chosen by the axis and not by the corpus.
+
+    A class the schema only ever embeds has two routes to the answer once the
+    embedding is offered, and the top-level one wins. Measured with
+    claude-haiku-4-5 on a person and their address: offered both, the model
+    ignores the object slot and returns a payload byte-identical to the one it
+    returns with the axis off; offered `Person` alone, it nests the address on
+    the first attempt.
+    """
+
+    VALUE_OBJECTS = (
+        "ContactPoint",
+        "Distance",
+        "Energy",
+        "GeoCoordinates",
+        "GeoShape",
+        "InteractionCounter",
+        "Mass",
+        "MonetaryAmount",
+        "Observation",
+        "OpeningHoursSpecification",
+        "PostalAddress",
+        "PriceSpecification",
+        "PropertyValue",
+        "QuantitativeValue",
+        "ShippingRateSettings",
+        "TypeAndQuantityNode",
+        "UnitPriceSpecification",
+    )
+    """What the current collection says, so a regeneration that moves it says so."""
+
+    def task(self):
+        return schemaorg_tasks(load_schemaorg(), count=1, seed=1)[0]
+
+    def test_the_collection_names_seventeen_of_its_describable_classes(self):
+        corpus = load_schemaorg()
+        assert len(corpus.describable) == 108
+        assert value_object_classes(corpus.classes, corpus.describable) == self.VALUE_OBJECTS
+
+    def test_a_class_neither_embedded_nor_pointed_at_is_none_of_them(self):
+        """Thirty-five of the 108 are in that bucket, and nothing offers them
+        as an object, so a rule keeping link targets alone would lose them."""
+        derived = set(value_object_classes(load_schemaorg().classes))
+        assert not derived & {"Article", "Book", "Flight", "JobPosting"}
+
+    def test_a_generated_task_records_them_among_the_classes_it_offers(self):
+        task = self.task()
+        assert task.value_objects == list(self.VALUE_OBJECTS)
+        assert set(task.value_objects or ()) < set(task.catalogue or ())
+
+    def test_the_axis_off_offers_the_whole_catalogue(self):
+        """An excluded class would be unreachable: with no embedding offered,
+        nothing else in the prompt holds one."""
+        task = self.task()
+        cell = build_cell(task, Options(catalogue_size=None, embed_nested=False))
+        assert offered_catalogue(cell) == task.catalogue
+
+    def test_the_axis_on_offers_none_of_them(self):
+        task = self.task()
+        offered = offered_catalogue(build_cell(task, Options(catalogue_size=None, embed_nested=True)))
+        assert not set(offered) & set(self.VALUE_OBJECTS)
+        assert len(offered) == len(task.catalogue or []) - len(self.VALUE_OBJECTS)
+        assert "JobPosting" in offered
 
 
 @needs_schemaorg

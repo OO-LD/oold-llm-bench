@@ -128,7 +128,12 @@ class Options:
     `PostalAddress`, so a plan that finds one produces an entity nothing
     reaches. On, the picture should show the address inside the person who
     lives there rather than beside them, which is the one thing this toggle
-    is for looking at."""
+    is for looking at.
+
+    On also narrows the catalogue, `PostalAddress` and the 16 other classes
+    the schema only ever embeds dropping out of it. Left in, the plan writes
+    the address as a top-level entity and the slot stays empty, which is the
+    picture this toggle was meant to change."""
     attempts: int = 1
 
     def condition(self) -> Condition:

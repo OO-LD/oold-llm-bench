@@ -224,7 +224,7 @@ def _run_steps(
 
     from oold_llm_bench.clients import Credentials, client_factory
     from oold_llm_bench.results.record import Environment, RunRecord, config_hash
-    from oold_llm_bench.runner import Cell, build_agent
+    from oold_llm_bench.runner import Cell, build_agent, offered_catalogue
     from oold_llm_bench.runner.arms import register_union_arms
     from oold_llm_bench.steps import run_step
 
@@ -268,7 +268,7 @@ def _run_steps(
                     environment=environment,
                     enforcement=cell.condition.describe() | {"step": grid.step},
                     corpus_hash=cell.task.corpus.content_hash,
-                    catalogue_hash=config_hash(cell.task.catalogue or []),
+                    catalogue_hash=config_hash(offered_catalogue(cell)),
                     prompt_hash=config_hash(cell.task.document),
                     split=cell.task.split.value,
                     variant=cell.task.variant.value,

@@ -298,6 +298,7 @@ __all__ = [
     "resolvable_links",
     "seed_values",
     "spell",
+    "value_object_classes",
     "written_value",
 ]
 
@@ -1070,6 +1071,41 @@ def linked_classes(classes: list[SchemaClass]) -> list[SchemaClass]:
     yield 397 drawable pairs over 38 distinct targets.
     """
     return [cls for cls in classes if resolvable_links(cls, classes)]
+
+
+def value_object_classes(classes: list[SchemaClass], pool: list[SchemaClass] | None = None) -> tuple[str, ...]:
+    """The classes this collection only ever writes inside another one.
+
+    The target of at least one embedding and of no link. ``PostalAddress``
+    stands in the ``address`` of whoever lives there and no property anywhere
+    declares a reference to one, so there is no document in which an address
+    is a thing the page points at. That is the collection's own statement
+    about the class, which is why it is derived rather than listed: a list
+    would be a reading of what the names sound like.
+
+    ``pool`` is the set a catalogue may offer and defaults to ``classes``. The
+    ranges are gathered over the whole collection either way, because a class
+    is embedded by whoever embeds it and most of those holders are too thin to
+    be describable. ``Energy`` and ``UnitPriceSpecification`` are embedded
+    only by classes no catalogue offers, and gathering over the pool alone
+    would miss both.
+
+    Measured over the 108 describable classes of this collection: 17 are value
+    objects, 56 are the target of a link somewhere, and 35 are neither,
+    ``Article``, ``Book``, ``Flight`` and ``JobPosting`` among them. That
+    third set is why the test asks for an embedding and not for the absence of
+    a link: nothing points at an ``Article`` either, and keeping link targets
+    alone would drop 35 classes that no other route reaches.
+
+    The two sets do not meet here, no class in the collection being both
+    embedded and pointed at. The second half of the test therefore removes
+    nothing today, and it is in the test because a class a page can point at
+    is reachable as an answer whether or not something also embeds it.
+    """
+    embedded = {target for cls in classes for item in cls.nested for target in item.ranges}
+    pointed_at = {target for cls in classes for link in cls.links for target in link.ranges}
+    candidates = classes if pool is None else pool
+    return tuple(sorted({cls.name for cls in candidates if cls.name in embedded and cls.name not in pointed_at}))
 
 
 def implied_classes(
@@ -2828,9 +2864,28 @@ def _task_from(
         answer_schema=shape,
         branches=narrowed,
         embedded_branches=embedded,
+        value_objects=_value_objects_in(catalogue, classes, variant),
         class_parents=lineage,
         property_ranges=_ranges_of(offered) or None,
     )
+
+
+def _value_objects_in(
+    catalogue: tuple[str, ...] | None,
+    classes: list[SchemaClass],
+    variant: Variant,
+) -> list[str] | None:
+    """Which of the offered classes are value objects, named as the task names them.
+
+    Resolved against the whole collection, the way :func:`value_object_classes`
+    asks to be called: the catalogue is the candidates, and what embeds them
+    is most often a class the catalogue does not hold.
+    """
+    if not catalogue:
+        return None
+    names = set(value_object_classes(classes))
+    by_identifier = {class_identifier(cls.name, variant): cls.name for cls in classes}
+    return [identifier for identifier in catalogue if by_identifier.get(identifier) in names]
 
 
 def _ranges_of(offered: list[SchemaClass]) -> dict[str, list[str]]:

@@ -25,6 +25,7 @@ from oold_llm_bench.grading.compare import UnitMatch
 from oold_llm_bench.grading.score import TaskScore, score_task
 from oold_llm_bench.grading.triples import TripleSet
 from oold_llm_bench.results.record import Environment, RunRecord, config_hash
+from oold_llm_bench.runner.adapter import offered_catalogue
 from oold_llm_bench.runner.config import Cell, ExperimentConfig
 from oold_llm_bench.runner.training_match import TrainingMatch, match_of
 
@@ -212,7 +213,10 @@ def run_cell(
         environment=environment,
         enforcement=cell.condition.describe(),
         corpus_hash=cell.task.corpus.content_hash,
-        catalogue_hash=config_hash(cell.task.catalogue or []),
+        # The catalogue the condition offered and not the one the task
+        # declares. One task supplies two of them, and a hash naming the task's
+        # would say the embedding pair ran against the same class list.
+        catalogue_hash=config_hash(offered_catalogue(cell)),
         # The assembled turns when the agent hands them back, the document
         # otherwise. Folding changes the bytes one model receives, so the
         # document alone would say two models were sent the same prompt.
