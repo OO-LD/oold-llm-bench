@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.1 (2026-10-10)
+
+### Bug Fixes
+
+- **grading**: A canonical form is not an ungrounded value
+  ([`16d7d35`](https://github.com/OO-LD/oold-llm-bench/commit/16d7d35126fa7857a10ef15ce0a49dd69b1e98a4))
+
+
 ## v0.4.0 (2026-10-10)
 
 ### Features
