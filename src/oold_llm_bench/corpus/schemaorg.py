@@ -2864,6 +2864,7 @@ def _task_from(
         answer_schema=shape,
         branches=narrowed,
         embedded_branches=embedded,
+        embedded_ranges=embedded_ranges_of(offered) or None,
         value_objects=_value_objects_in(catalogue, classes, variant),
         class_parents=lineage,
         property_ranges=_ranges_of(offered) or None,
@@ -2901,6 +2902,27 @@ def _ranges_of(offered: list[SchemaClass]) -> dict[str, list[str]]:
         for link in cls.own_links:
             if link.ranges:
                 ranges.setdefault(link.name, set()).update(link.ranges)
+    return {name: sorted(values) for name, values in sorted(ranges.items())}
+
+
+def embedded_ranges_of(offered: list[SchemaClass]) -> dict[str, list[str]]:
+    """Which classes each object-valued property may hold, over the offered set.
+
+    What :func:`_ranges_of` says for a link, said for an embedding. The two
+    are kept apart because they are only both true under the condition that
+    offers the object: with no object slot in the schema, ``address`` is a
+    text slot, and a range declared for it would have the agent rewrite it
+    into an enum of planned ids and lose the text the document states.
+
+    A planned entity is absorbed by the property that can hold it, and that
+    is the same test a link uses to decide what it may point at, so the
+    answer has to be available in the same shape.
+    """
+    ranges: dict[str, set[str]] = {}
+    for cls in offered:
+        for item in cls.own_nested:
+            if item.ranges:
+                ranges.setdefault(item.name, set()).update(item.ranges)
     return {name: sorted(values) for name, values in sorted(ranges.items())}
 
 

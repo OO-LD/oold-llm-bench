@@ -367,8 +367,18 @@ def _ranges_of(cell: Cell) -> dict[str, tuple[str, ...]] | None:
     What `_pin_references` needs to constrain a reference slot to the ids of
     planned entities whose class fits. Supplied per request because it is
     corpus material, the way branches and parents already are.
+
+    An object-valued property's range joins them only where the condition
+    offers the object. It is the same question asked of an embedding, and the
+    answer decides which planned entity the property step absorbs by choosing
+    to write it in place. Declared with no object slot in the schema,
+    ``address`` is a text slot and the range would have it rewritten into an
+    enum of planned ids, losing the text the document states.
     """
-    declared = cell.task.property_ranges
+    declared = dict(cell.task.property_ranges or {})
+    if cell.condition.embed_nested:
+        for name, values in (cell.task.embedded_ranges or {}).items():
+            declared.setdefault(name, list(values))
     if not declared:
         return None
     return {name: tuple(values) for name, values in declared.items()}

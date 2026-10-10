@@ -174,6 +174,7 @@ def wdc_tasks(per_class: int, pages: Path | None = None) -> list[TaskRecord]:
         answer_schema,
         branches_for,
         embedded_for,
+        embedded_ranges_of,
         load_classes,
         value_object_classes,
     )
@@ -212,6 +213,7 @@ def wdc_tasks(per_class: int, pages: Path | None = None) -> list[TaskRecord]:
                 "answer_schema": shape,
                 "branches": narrowed,
                 "embedded_branches": embedded,
+                "embedded_ranges": embedded_ranges_of(present) or None,
                 "value_objects": value_objects,
                 "class_parents": lineage,
             }

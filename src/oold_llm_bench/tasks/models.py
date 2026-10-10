@@ -200,6 +200,19 @@ class TaskRecord(BaseModel):
     an empty mapping: a condition asking for an embedding is refused against
     the first and honoured against the second."""
 
+    embedded_ranges: dict[str, list[str]] | None = None
+    """Which classes each object-valued property may hold.
+
+    What ``property_ranges`` says for a link, said for an embedding, and kept
+    apart for the reason ``embedded_branches`` is kept apart: only the
+    condition that offers the object makes it true. Declared for a text slot
+    instead, a range has the agent rewrite the slot into an enum of planned
+    ids and lose the text the document states.
+
+    It is what decides which planned entity an embedding absorbs, since the
+    property step choosing to write a thing in place is the step choosing not
+    to have it as a sibling."""
+
     value_objects: list[str] | None = None
     """The offered classes that only ever stand inside another entity.
 
