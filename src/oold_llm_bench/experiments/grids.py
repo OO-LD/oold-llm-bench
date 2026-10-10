@@ -108,6 +108,18 @@ def _synthetic(per_class: int, schemas: Path | None) -> list[TaskRecord]:
     return synthetic_schemaorg_tasks(per_class, schemas)
 
 
+def _wdc(per_class: int, schemas: Path | None) -> list[TaskRecord]:
+    """Real pages whose markup holds an entity inside another entity.
+
+    ``schemas`` is accepted and unused, as :func:`_synthetic` accepts it: the
+    catalogue comes from the corpus file, which names the classes its own
+    documents carry.
+    """
+    from oold_llm_bench.experiments.corpora import wdc_tasks
+
+    return wdc_tasks(per_class)
+
+
 def _wikidata_own_words(per_class: int, schemas: Path | None) -> list[TaskRecord]:
     """The same tasks, with each slot described as Wikidata describes it.
 
@@ -331,6 +343,29 @@ GRIDS: dict[str, Grid] = {
             workers=12,
             step="extract",
             notes="Ids come from the plan and are pinned, so a link has a name to point at.",
+        ),
+        Grid(
+            name="wdc-nested",
+            summary="Pages that nest an entity inside an entity, two levels deep",
+            conditions=_STEP_CONDITIONS,
+            tasks=_wdc,
+            per_class=30,
+            dimensions=("class", "entity:recall", "property:recall", "value:recall", "grounded"),
+            needs_schemas=False,
+            workers=12,
+            notes=(
+                "The baseline for nested extraction, run before the answer schema can "
+                "express nesting at all. The corpus holds the nesting flattened into ids, "
+                "so what this reads is whether an arm recovers a held entity as a separate "
+                "entity with an edge to it, which is the only shape the schema currently "
+                "offers. Run it again once a nested slot exists and the pair is the "
+                "measurement: same documents, same truth, two ways of writing the answer. "
+                "Recall and not F1, for the reason step-identify gives: truth here is what "
+                "a page's markup annotated, and a page says more than it annotates, so "
+                "precision counts the rest of the page as invention. `grounded` is the "
+                "check that keeps recall honest, since it asks whether a produced value is "
+                "in the text at all."
+            ),
         ),
         Grid(
             name="multi-step-chain",

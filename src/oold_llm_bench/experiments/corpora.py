@@ -30,6 +30,7 @@ __all__ = [
     "documents_for",
     "quantity_tasks",
     "synthetic_schemaorg_tasks",
+    "wdc_tasks",
     "wikidata_schemaorg_tasks",
 ]
 
@@ -144,6 +145,53 @@ def wikidata_schemaorg_tasks(per_class: int, documents: Path | None = None) -> l
     from oold_llm_bench.corpus import load_entities
 
     return balance(load_entities(documents_for(documents)), per_class)
+
+
+def wdc_tasks(per_class: int, pages: Path | None = None) -> list[TaskRecord]:
+    """Web Data Commons pages, as tasks.
+
+    The one corpus whose documents hold an entity inside another entity. A
+    recipe page annotates the rating it was given and the review that gave it,
+    so a document yields ``Recipe -aggregateRating-> AggregateRating`` and
+    ``Recipe -review-> Review -reviewRating-> Rating``, two levels deep. Every
+    other corpus here links by id at one level, which is a different question
+    to ask a model.
+
+    The page text is not redistributable and is not in the repository, so this
+    reads it from the cache :data:`~oold_llm_bench.corpus.wdc.PAGES_ENV`
+    names, rebuilt by ``scripts/build_wdc_schemaorg.py --pages-only``. A clone
+    without that cache gets a clear refusal rather than an empty task list,
+    which would read as a corpus with nothing in it.
+
+    The corpus file names the classes and the expectations and nothing about
+    the schema, so the shape is attached here from the schema collection. A
+    union arm needs one branch per offered class, and a task carrying none
+    fails the decode constraint outright rather than scoring badly, which
+    reads as a finding about the corpus and is a missing field.
+    """
+    from oold_llm_bench.corpus.schemaorg import Variant, answer_schema, branches_for, load_classes
+    from oold_llm_bench.corpus.wdc import load_tasks
+    from oold_llm_bench.playground.corpora import schemas_directory
+
+    tasks = balance(load_tasks(pages), per_class)
+    if not tasks:
+        return tasks
+    offered = tuple(tasks[0].catalogue or ())
+    # Every class the corpus offers, not only the describable ones. A document
+    # is read here rather than generated, so a class needs no slots of its own
+    # to be worth offering: `Rating` declares two and carries a real value.
+    by_name = {cls.name: cls for cls in load_classes(schemas_directory())}
+    present = [by_name[name] for name in offered if name in by_name]
+    missing = [name for name in offered if name not in by_name]
+    if missing:
+        raise ValueError(f"the schema collection describes none of {missing}, which the wdc catalogue offers")
+    shape = answer_schema(present, Variant.NATIVE)
+    narrowed = branches_for(present, Variant.NATIVE)
+    lineage = {cls.name: [parent for parent in cls.parents if parent in set(offered)] for cls in present}
+    return [
+        task.model_copy(update={"answer_schema": shape, "branches": narrowed, "class_parents": lineage})
+        for task in tasks
+    ]
 
 
 def synthetic_schemaorg_tasks(per_class: int, schemas: Path | None = None, n_slots: int = 6) -> list[TaskRecord]:
