@@ -7,7 +7,7 @@ keywords = ["python"]
 requires-python = ">=3.11,<4.0"
 # Version is managed by python-semantic-release (see [tool.semantic_release]).
 # Do not edit by hand; it is bumped automatically on merge to main.
-version = "0.6.0"
+version = "0.7.0"
 classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python",

@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.7.0 (2026-10-10)
+
+### Features
+
+- **corpus**: Give an object-valued property its range
+  ([`d15ff4c`](https://github.com/OO-LD/oold-llm-bench/commit/d15ff4c71e2050583fb212e26f1f43050b31cfe1))
+
+
 ## v0.6.0 (2026-10-10)
 
 ### Features
