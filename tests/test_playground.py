@@ -69,7 +69,7 @@ from oold_llm_bench.playground import (
 )
 from oold_llm_bench.playground.app import STATE_STYLE, state_html
 from oold_llm_bench.playground.corpora import NAME_SLOT, is_scoreable
-from oold_llm_bench.playground.graph import CLOSE_MATCH_COLOUR, PARALLEL_ROUNDNESS, SELF_ANGLE
+from oold_llm_bench.playground.graph import CLOSE_MATCH_COLOUR, NESTED_COLOUR, PARALLEL_ROUNDNESS, SELF_ANGLE
 from oold_llm_bench.playground.replay import _ids_in
 from oold_llm_bench.tasks.models import (
     CorpusRef,
@@ -406,6 +406,85 @@ class TestDanglingEdges:
         person = next(n.id for n in state.nodes.values() if n.kind == "entity")
         assert state.describe()["entities"] == [person]
         assert state.describe()["classes"] == ["Person"]
+
+
+NESTED_PAYLOAD = {
+    "entities": [
+        {
+            "type": "Person",
+            "id": "e1",
+            "name": "Andrea",
+            "address": {
+                "type": "PostalAddress",
+                "streetAddress": "Hauptstrasse 1",
+                "addressLocality": "Berlin",
+            },
+        }
+    ]
+}
+"""One entity holding another where a value goes, the shape schema.org
+declares for ``address`` and the benchmark could not read."""
+
+
+class TestNestedEntities:
+    """An object written where a value goes is an entity reached differently.
+
+    It carries a class, holds literals and may point at further entities, so
+    everything the graph does with a root entity it does with this one. The
+    one thing that differs is a claim about identity, and that is what the
+    picture has to show.
+    """
+
+    def test_the_nested_object_is_an_entity_the_field_points_at(self):
+        produced = extract_json(NESTED_PAYLOAD)
+        graph = build_graph(produced)
+        person = next(n for n in graph.nodes.values() if n.class_path == "Person")
+        address = next(n for n in graph.nodes.values() if n.class_path == "PostalAddress")
+        assert [(e.source, e.label, e.target, e.kind) for e in graph.edges.values()] == [
+            (person.id, "address", address.id, "link")
+        ]
+        assert graph.isolated == []
+
+    def test_only_the_nested_one_is_marked(self):
+        produced = extract_json(NESTED_PAYLOAD)
+        graph = build_graph(produced)
+        marked = {node.class_path for node in graph.nodes.values() if node.nested}
+        assert marked == {"PostalAddress"}
+        assert graph.describe()["nested"] == 1
+
+    def test_it_keeps_its_literals_and_is_drawn_as_an_instance(self):
+        """Same type as a root entity, so it is laid out and hovered the same."""
+        graph = build_graph(extract_json(NESTED_PAYLOAD))
+        address = next(n for n in graph.nodes.values() if n.nested)
+        assert address.data["street_address"] == "Hauptstrasse 1"
+        assert address.action()["type"] == "instance"
+        assert address.overlay() == {"id": address.id, "color": NESTED_COLOUR, "shape": "square"}
+
+    def test_a_root_entity_carries_no_overlay(self):
+        graph = build_graph(extract_json(NESTED_PAYLOAD))
+        person = next(n for n in graph.nodes.values() if not n.nested)
+        assert person.overlay() is None
+
+    def test_a_later_turn_reporting_it_in_its_own_right_settles_it(self):
+        """The answer that nested it could not say whether anything else
+        refers to it; the answer that gave it a place of its own did."""
+        state = GraphState()
+        state.update(build_graph(extract_json(NESTED_PAYLOAD)))
+        state.update(
+            build_graph(
+                extract_json({
+                    "entities": [
+                        {
+                            "type": "PostalAddress",
+                            "id": "a1",
+                            "streetAddress": "Hauptstrasse 1",
+                            "addressLocality": "Berlin",
+                        }
+                    ]
+                })
+            )
+        )
+        assert state.describe()["nested"] == []
 
 
 class TestIsolatedEntities:

@@ -237,6 +237,20 @@ class TripleSet(BaseModel):
     provenance: dict[str, str]
     """Entity key to the span of the document it was drawn from, where an arm
     reports one."""
+    nested: frozenset[str] = frozenset()
+    """Entities the answer wrote inside another entity's field.
+
+    Embedded rather than named and pointed at. The schema decides which of
+    the two a property takes, so the shape is itself something an arm gets
+    right or wrong, and the triples no longer say which was used once they
+    are flattened.
+
+    Scored as any other entity. An embedded entity carries a class and
+    properties, may point at others and may be pointed at, so nothing else
+    about it differs.
+
+    Empty for an answer that nested nothing, and for every record written
+    before this was kept."""
     parse_errors: int = 0
     """How many fragments the extractor could not turn into a triple. For
     a prose arm this is the instrument's own error, reported next to the score."""

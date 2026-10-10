@@ -105,6 +105,18 @@ class _Reader:
         self._next = 0
         self._taken: set[str] = set()
         """Every key handed out, stated or invented. See :meth:`key`."""
+        self.nested: set[str] = set()
+        """Keys of entities that arrived inside another entity's field.
+
+        The same thing a top-level entity is, written differently: the answer
+        put the object where the value goes rather than naming it and
+        pointing at the name. Embedding is a serialisation choice the schema
+        asks for and not a claim about identity, so an embedded entity may
+        still carry an id, point at others and be pointed at.
+
+        Recorded because nothing in the triples says which shape the answer
+        used once they are flattened, and which shape it used is a thing the
+        arm got right or wrong."""
         self.stated: set[str] = set()
         """Keys an entity named for itself.
 
@@ -229,6 +241,7 @@ class _Reader:
             # and the field that held it is an edge to it.
             child = self.entity(scalar)
             if child is not None:
+                self.nested.add(child)
                 self.triples.add(make_triple(key, field, Reference(key=child)))
             return
         if isinstance(scalar, list):
@@ -279,6 +292,7 @@ def extract_json(payload: Any) -> TripleSet:
         triples=frozenset(_resolve_stated_ids(reader.triples, reader.stated)),
         classes=reader.classes,
         provenance=reader.provenance,
+        nested=frozenset(reader.nested),
         parse_errors=reader.parse_errors,
     )
 

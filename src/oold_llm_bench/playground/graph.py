@@ -74,6 +74,12 @@ reported, so it is the shape of a failure rather than of a thing.
 
 MISSING_COLOUR: dict[str, str] = {"background": "#c0392b", "border": "#7b241c"}
 
+NESTED_COLOUR: dict[str, str] = {"background": "#aed6f1", "border": "#2e86c1"}
+"""An entity the answer wrote inside another one, paler than a root entity.
+
+Paler and not another hue: it is the same kind of thing reached a different
+way, and a contrasting colour would read as a different kind."""
+
 CLOSE_MATCH_COLOUR: dict[str, str] = {"color": "#8e44ad", "highlight": "#8e44ad"}
 """A deferred identity, drawn apart from a link and from a broken one.
 
@@ -161,6 +167,19 @@ class Node:
     entities sharing a stand-in would agree on a name neither of them has.
     """
 
+    nested: bool = False
+    """Whether every answer so far wrote this entity inside another one.
+
+    Where it was written and nothing more. An embedded entity carries a
+    class, holds literals, points at further entities and is pointed at by
+    anything that knows its id, exactly as one written at the top level is,
+    so the graph treats the two the same everywhere but here.
+
+    Drawn apart because the shape is a claim the arm made and worth seeing
+    against the schema that asked for it. It stops being true as soon as one
+    answer gives the entity a place of its own.
+    """
+
     def action(self, verb: str = "addNode") -> dict[str, Any]:
         node: dict[str, Any] = {
             "action": verb,
@@ -175,10 +194,18 @@ class Node:
         return node
 
     def overlay(self) -> dict[str, Any] | None:
-        """A direct node update, for what the flat format cannot say."""
-        if self.kind != "missing":
-            return None
-        return {"id": self.id, "color": MISSING_COLOUR, "shape": "diamond"}
+        """A direct node update, for what the flat format cannot say.
+
+        The renderer offers three types and this is the way past them. A
+        nested entity keeps the instance type, so it is laid out, hovered and
+        linked exactly as a root entity is, and takes a square and a paler
+        fill so which one it is can be read off the picture.
+        """
+        if self.kind == "missing":
+            return {"id": self.id, "color": MISSING_COLOUR, "shape": "diamond"}
+        if self.nested and self.kind == "entity":
+            return {"id": self.id, "color": NESTED_COLOUR, "shape": "square"}
+        return None
 
 
 @dataclass(frozen=True)
@@ -265,6 +292,7 @@ class Graph:
             "dangling": len(self.dangling),
             "self_loops": len(self.edges_of_kind("self")),
             "isolated": len(self.isolated),
+            "nested": sum(1 for node in self.nodes.values() if node.nested),
         }
 
 
@@ -457,6 +485,7 @@ def build_graph(
             data=_data_of(key, class_path, literals, mention=read.get(key)),
             class_path=class_path,
             named=named is not None,
+            nested=key in produced.nested,
         )
 
     if show_classes:
@@ -852,6 +881,7 @@ class GraphState:
             "dangling": sorted("|".join(e.key) for e in self.edges.values() if e.kind == "dangling"),
             "self_loops": sorted("|".join(e.key) for e in self.edges.values() if e.kind == "self"),
             "isolated": _isolated(self.nodes, self.edges.values()),
+            "nested": sorted(node.id for node in entities if node.nested),
             "close_matches": sorted("|".join(e.key) for e in self.edges.values() if e.kind == "closeMatch"),
             "conflicts": {key: sorted(props) for key, props in sorted(self.conflicts.items()) if props},
             "identity": self.ledger.describe(),
@@ -971,6 +1001,10 @@ def _fold(current: Node, incoming: Node, conflicts: list[str]) -> Node:
     # names the thing, so a turn that finally supplies a name upgrades a node
     # that had only been standing in for one.
     named = current.named or incoming.named
+    # True while every answer embedded it, which is what the flag says. One
+    # answer writing it at the top level is enough to make it false, and the
+    # entity is the same entity either way.
+    nested = current.nested and incoming.nested
     label = current.label if _is_named(current) else incoming.label
     # A healed placeholder is the one direction kind has to change: a
     # `missing` node is a stand-in for an entity a link named and nothing
@@ -978,7 +1012,7 @@ def _fold(current: Node, incoming: Node, conflicts: list[str]) -> Node:
     # waiting for. Without this a healed placeholder stayed drawn as
     # "missing" forever, even once a real entity had filled it in.
     kind = incoming.kind if current.kind == "missing" else current.kind
-    return replace(current, data=data, class_path=class_path, label=label, kind=kind, named=named)
+    return replace(current, data=data, class_path=class_path, label=label, kind=kind, named=named, nested=nested)
 
 
 VIS_OPTIONS: dict[str, Any] = {
