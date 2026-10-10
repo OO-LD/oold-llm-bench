@@ -21,13 +21,24 @@ that the deferral is not free.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from oold_llm_bench.corpus.wikidata_identity import IdentityClass, Pair, agreeing_properties, shared_strings
+from oold_llm_bench.corpus.wikidata_identity import (
+    EntityState,
+    IdentityClass,
+    Pair,
+    agreeing_properties,
+    shared_strings,
+)
 from oold_llm_bench.grading.identity import AGREEMENT, JUDGE, PREFILTER, Judgement
+
+if TYPE_CHECKING:
+    from oold.agent.client import ChatClient
 
 __all__ = [
     "MIN_NAME_LENGTH",
@@ -35,6 +46,7 @@ __all__ = [
     "SHINGLE",
     "Resolver",
     "jaccard",
+    "judge_of",
     "name_entropy",
     "shingles",
 ]
@@ -156,3 +168,56 @@ class Resolver:
                 if best is None or score > best[0]:
                     best = (score, name if len(name) >= len(other) else other)
         return best
+
+
+_JUDGE_OUTCOMES = {"same": IdentityClass.SAME, "different": IdentityClass.DIFFERENT, "unclear": IdentityClass.UNCLEAR}
+
+_JUDGE_PROMPT = (
+    "Two entity records. Decide whether they describe the same real-world thing.\n"
+    'Answer with JSON only: {{"outcome": "same" | "different" | "unclear", "reason": "<one sentence>"}}\n'
+    'Use "same" when confident they match, "different" when confident they do not, '
+    '"unclear" when a person should look.\n\n'
+    "A: {left}\nB: {right}\n"
+)
+
+
+def _render_state(state: EntityState) -> str:
+    body = {
+        "labels": state.labels,
+        "aliases": state.aliases,
+        "description": state.description,
+        "claims": state.claims,
+    }
+    return json.dumps(body, ensure_ascii=False)
+
+
+def judge_of(client: ChatClient) -> Callable[[Pair], tuple[IdentityClass, str]]:
+    """A real model as :class:`Resolver`'s judge, over :class:`EntityState` pairs.
+
+    One implementation, so a benchmark run and a playground session that both
+    ask a model whether two records are one entity ask it the same question in
+    the same words. Wraps the call in a try/except rather than letting a
+    transient failure stop a run: a pair the judge could not be reached for is
+    reported ``unclear`` with the error as its evidence, the same honest
+    deferral the corpus already gives a pair no cheap tier could settle.
+    """
+    from oold.agent.client import Message
+
+    def decide(pair: Pair) -> tuple[IdentityClass, str]:
+        prompt = _JUDGE_PROMPT.format(left=_render_state(pair.left), right=_render_state(pair.right))
+        try:
+            reply = client.invoke([Message(role="user", content=prompt)])
+        except Exception as exc:
+            return IdentityClass.UNCLEAR, f"judge call failed: {type(exc).__name__}: {exc}"
+        text = (getattr(reply, "text", "") or "").strip()
+        cleaned = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            parsed = {}
+        outcome = _JUDGE_OUTCOMES.get(str(parsed.get("outcome", "")).strip().casefold())
+        if outcome is None:
+            return IdentityClass.UNCLEAR, f"the judge answered {text[:120]!r}, which names no outcome"
+        return outcome, str(parsed.get("reason") or "").strip() or "the judge gave no reason"
+
+    return decide

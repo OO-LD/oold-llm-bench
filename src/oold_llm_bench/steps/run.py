@@ -35,6 +35,12 @@ class StepOutcome:
     produced: Any = None
     dimensions: dict[Dimension, Score] = field(default_factory=dict)
     primary: Dimension = Dimension.ENTITY
+    metric: str = "f1"
+    """Which number of the primary dimension the cell reports.
+
+    ``recall`` where the corpus does not record every entity the document
+    holds, because precision there counts the page's other entities as
+    inventions and an F1 built on it cannot be read."""
     calls: Any = None
     error: str | None = None
 
@@ -46,9 +52,10 @@ class StepOutcome:
         dimension it was derived from rather than the step.
         """
         scored = self.dimensions.get(self.primary)
+        value = getattr(scored, self.metric) if scored else 0.0
         return {
             "task_id": self.step,
-            "primary_f1": round(scored.f1, 4) if scored else 0.0,
+            "primary_f1": round(value, 4),
             "dimensions": {dimension.value: score.describe() for dimension, score in self.dimensions.items()},
         }
 
@@ -63,6 +70,7 @@ def _identify(agent: Any, cell: Cell, request: Any) -> StepOutcome:
         produced={"selected": selected, "mentions": mentions},
         dimensions=score_identify(cell.task, selected, mentions),
         primary=Dimension.ENTITY,
+        metric="f1" if cell.task.corpus.exhaustive else "recall",
         calls=log,
     )
 
@@ -85,6 +93,11 @@ def _fillable(agent: Any, cell: Cell, request: Any) -> StepOutcome:
         produced={"chosen": chosen, "answered": getattr(agent, "fillable_answer", None)},
         dimensions=score_fillable(cell.task, chosen),
         primary=Dimension.FILLABLE,
+        # Naming a slot the corpus does not hold is only an error where the
+        # corpus holds every slot the document states. Three quarters of the
+        # rejections on harvested text are properties Wikidata records nothing
+        # about, so precision there grades the harvest.
+        metric="f1" if cell.task.corpus.exhaustive else "recall",
         calls=log,
     )
 
@@ -93,15 +106,34 @@ def _extract(agent: Any, cell: Cell, request: Any) -> StepOutcome:
     """Step three, handed the true plan, scored by the whole-answer grader.
 
     The ids come from the plan and are pinned into the schema, so a link has a
-    name to point at. What this measures against the single-shot arm is
-    therefore enforced ids against model-minted ones, with the classes held.
+    name to point at. The classes and the properties are pinned too, through
+    :meth:`~oold.agent.extraction.ExtractionAgent.extract_narrowed`, to the
+    ones the oracle already answers: an unnarrowed call still asks the model
+    to reclassify an entity step one already placed and to fill properties
+    step two never named, and a wrong answer there is not the value step's
+    mistake. Measured on the Wikidata corpus before this call existed,
+    63% of everything a model produced named a property outside what the
+    corpus's own document states.
+
+    What this measures against the single-shot arm is therefore enforced ids,
+    classes and properties against model-minted ones.
     """
     from oold_llm_bench.grading.compare import UnitMatch
     from oold_llm_bench.grading.score import score_task
     from oold_llm_bench.runner.execute import read_answer
+    from oold_llm_bench.steps.oracle import fillable_of
 
     plan = plan_of(cell.task)
-    result = agent.extract(request, plan=plan, filling=tuple(entity.key for entity in plan))
+    classes = tuple(dict.fromkeys(cls for entity in plan for cls in entity.classes))
+    fillable = fillable_of(cell.task)
+    properties = tuple(dict.fromkeys(name for names in fillable.values() for name in names)) or None
+    result = agent.extract_narrowed(
+        request,
+        plan=plan,
+        filling=tuple(entity.key for entity in plan),
+        classes=classes,
+        properties=properties,
+    )
     scored = score_task(
         cell.task,
         read_answer(cell, result),
@@ -120,8 +152,13 @@ STEPS = {"identify": _identify, "fillable": _fillable, "extract": _extract}
 """Each step of the pipeline, runnable alone against oracle input.
 
 ``dedup`` is absent: its judge is measured by
-:mod:`oold_llm_bench.grading.identity` against its own corpus, and its merge
-has no ground truth until a sequence corpus exists.
+:mod:`oold_llm_bench.grading.identity` against its own corpus instead of as a
+step cell here, because a judgement is not a triple and this harness scores
+triples. Its merge has ground truth now in two of the three sequence sources
+(:mod:`oold_llm_bench.corpus.sequence`'s split-generated draw, and
+``Pair.expected_patch`` on a Wikidata merge pair), but no ``PATCH`` scorer
+reads either yet, and the harvest has not been rerun to put
+``expected_patch`` on the corpus already on disk.
 """
 
 

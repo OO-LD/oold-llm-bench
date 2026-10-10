@@ -25,11 +25,32 @@ __all__ = [
     "DOCUMENTS",
     "DOCUMENTS_CACHE",
     "DOCUMENTS_REVISION",
+    "SYNTHETIC_CLASSES",
     "balance",
     "documents_for",
     "quantity_tasks",
+    "synthetic_schemaorg_tasks",
     "wikidata_schemaorg_tasks",
 ]
+
+SYNTHETIC_CLASSES = (
+    "Event",
+    "CollegeOrUniversity",
+    "Movie",
+    "MusicAlbum",
+    "Organization",
+    "Painting",
+    "Periodical",
+    "Person",
+    "TVSeries",
+    "VideoGame",
+)
+"""The ten classes the Wikidata corpus draws, held fixed here too.
+
+A generated task is comparable to a harvested one only if both answer the
+same question over the same catalogue. Drawing from a wider or narrower set
+of classes would make a precision gap readable as a corpus effect when it was
+a catalogue effect."""
 
 DOCUMENTS = "OO-LD/oold-wikidata-schemaorg-documents"
 DOCUMENTS_REVISION = "ed302be3d95fc21e2be21001f858b45b4d15c0b9"
@@ -123,3 +144,60 @@ def wikidata_schemaorg_tasks(per_class: int, documents: Path | None = None) -> l
     from oold_llm_bench.corpus import load_entities
 
     return balance(load_entities(documents_for(documents)), per_class)
+
+
+def synthetic_schemaorg_tasks(per_class: int, schemas: Path | None = None, n_slots: int = 6) -> list[TaskRecord]:
+    """Generated schema.org entities, as tasks, over the same ten classes
+    :data:`wikidata_schemaorg_tasks` draws from real leads.
+
+    The entity is written from a known set of facts rather than read from a
+    page, so what the document states and what the corpus expects are the
+    same thing by construction. Run beside the Wikidata corpus, the gap
+    between them is the share of fillable's precision ceiling that belongs to
+    Wikidata's coverage rather than to the step: see
+    :mod:`oold_llm_bench.corpus.wikidata_schemaorg`'s module docstring for the
+    measurement this is the control for.
+
+    ``n_slots`` at 6 rather than the generator's own default of 4, because the
+    harvested entities it is compared against hold more: the Wikidata corpus's
+    grounded facts run from a handful to over a dozen per entity, and a
+    generated document stating fewer would understate the fillable task.
+
+    ``schemas`` resolves the pinned schema.org module the same way a quantity
+    grid resolves its own, rather than through ``needs_schemas``: that flag is
+    wired to the quantities module specifically, and a second corpus needing
+    a different one would have to fight it for the same path.
+    """
+    from oold_llm_bench.corpus import SCHEMAORG, generate_schemaorg_task, load_classes, resolve_module
+    from oold_llm_bench.tasks import Difficulty, Split
+
+    directory = schemas or resolve_module(SCHEMAORG)
+    classes = load_classes(directory)
+    offered = [cls for cls in classes if cls.name in SYNTHETIC_CLASSES]
+    by_name = {cls.name: cls for cls in offered}
+    missing = set(SYNTHETIC_CLASSES) - set(by_name)
+    if missing:
+        raise ValueError(f"the schema.org module at {directory} has no class for {sorted(missing)}")
+
+    tasks = [
+        generate_schemaorg_task(
+            classes,
+            task_id=f"synthetic-{name}-{seed}",
+            seed=seed,
+            draw_from=[by_name[name]],
+            n_entities=1,
+            n_slots=n_slots,
+            split=Split.DEV,
+            difficulty=Difficulty.MEDIUM,
+            catalogue=SYNTHETIC_CLASSES,
+            describe_catalogue=True,
+        )
+        # Seeded off the class's position rather than drawn from one running
+        # counter, so adding a class at the end never reseeds every task
+        # already taken from the others. Not `hash(name)`: string hashing is
+        # salted per process, and a seed that changes between runs reproduces
+        # nothing.
+        for index, name in enumerate(SYNTHETIC_CLASSES)
+        for seed in range(index * 10_000, index * 10_000 + per_class)
+    ]
+    return balance(tasks, per_class)

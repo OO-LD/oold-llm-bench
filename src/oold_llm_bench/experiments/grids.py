@@ -97,6 +97,17 @@ def _wikidata(per_class: int, schemas: Path | None) -> list[TaskRecord]:
     return wikidata_schemaorg_tasks(per_class)
 
 
+def _synthetic(per_class: int, schemas: Path | None) -> list[TaskRecord]:
+    """Generated entities over the same ten classes :func:`_wikidata` draws
+    from real leads, so a grid can run the same step on both and read the gap
+    as the corpus's, not the catalogue's. ``schemas`` is accepted, not
+    ``needs_schemas``: that flag resolves the quantities module by name, and
+    a second corpus needing its own would have nothing to resolve it with."""
+    from oold_llm_bench.experiments.corpora import synthetic_schemaorg_tasks
+
+    return synthetic_schemaorg_tasks(per_class, schemas)
+
+
 def _wikidata_own_words(per_class: int, schemas: Path | None) -> list[TaskRecord]:
     """The same tasks, with each slot described as Wikidata describes it.
 
@@ -248,11 +259,15 @@ GRIDS: dict[str, Grid] = {
             conditions=_STEP_CONDITIONS,
             tasks=_wikidata,
             per_class=20,
-            dimensions=("class", "mention", "entity:precision", "entity:recall"),
+            dimensions=("class", "mention", "entity:recall"),
             needs_schemas=False,
             workers=12,
             step="identify",
-            notes="Real text. The first step answers from the document and the catalogue alone.",
+            notes=(
+                "Real text, where the corpus records the subject alone. Entity precision is left out: "
+                "a lead names the subject's founder and its city too, and counting those as inventions "
+                "measures how much the document says."
+            ),
         ),
         Grid(
             name="step-fillable",
@@ -291,6 +306,21 @@ GRIDS: dict[str, Grid] = {
             notes="Against step-fillable, which shows schema.org's words for the same slots.",
         ),
         Grid(
+            name="step-fillable-synthetic",
+            summary="The same step, on generated entities where every stated fact is known",
+            conditions=_STEP_CONDITIONS,
+            tasks=_synthetic,
+            per_class=20,
+            dimensions=("fillable", "fillable:precision", "fillable:recall"),
+            needs_schemas=False,
+            workers=12,
+            step="fillable",
+            notes=(
+                "Against step-fillable: a generated document states exactly its entity's known facts, "
+                "so precision is read against ground truth and not against Wikidata's coverage of it."
+            ),
+        ),
+        Grid(
             name="step-extract",
             summary="The entity itself, given the true plan and ids pinned to it",
             conditions=_STEP_CONDITIONS,
@@ -301,6 +331,37 @@ GRIDS: dict[str, Grid] = {
             workers=12,
             step="extract",
             notes="Ids come from the plan and are pinned, so a link has a name to point at.",
+        ),
+        Grid(
+            name="multi-step-chain",
+            summary="Detect, choose properties, extract: the whole orchestration, no oracle",
+            conditions=_STEP_CONDITIONS,
+            tasks=_wikidata,
+            per_class=20,
+            dimensions=("class", "property", "value"),
+            needs_schemas=False,
+            workers=12,
+            notes=(
+                "The same arm and the same tasks as step-identify, step-fillable and "
+                "step-extract, run end to end instead of one at a time against oracle "
+                "input. The drop against the three step grids is what a wrong plan or a "
+                "wrong property choice costs once nothing downstream corrects it."
+            ),
+        ),
+        Grid(
+            name="multi-step-chain-synthetic",
+            summary="The same chain, on generated entities where every stated fact is known",
+            conditions=_STEP_CONDITIONS,
+            tasks=_synthetic,
+            per_class=20,
+            dimensions=("class", "property", "value"),
+            needs_schemas=False,
+            workers=12,
+            notes=(
+                "Against multi-step-chain: a generated document states exactly its "
+                "entity's known facts, so a drop here is the chain's own error "
+                "compounding and not Wikidata's coverage showing up a second time."
+            ),
         ),
         Grid(
             name="schemaorg-union",

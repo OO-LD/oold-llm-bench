@@ -20,6 +20,7 @@ from oold_llm_bench.grading.score import Score
 from oold_llm_bench.grading.triples import Dimension
 
 if TYPE_CHECKING:
+    from oold_llm_bench.grading.vocabulary import PropertyHierarchy
     from oold_llm_bench.tasks.models import TaskRecord
 
 __all__ = ["match_entities", "score_fillable", "score_identify"]
@@ -122,12 +123,27 @@ def score_identify(
     return out
 
 
+def _counts(got: set[str], want: set[str], hierarchy: PropertyHierarchy | None) -> tuple[int, int, int]:
+    """Hits, overshoots and misses for one entity's slots.
+
+    Without a hierarchy this is set arithmetic. With one, the names neither
+    set shares are forgiven through :meth:`PropertyHierarchy.forgive`, the one
+    pairing :mod:`grading.score` also uses at the triple grader.
+    """
+    hit = len(got & want)
+    if hierarchy is None:
+        return hit, len(got - want), len(want - got)
+    forgiven, taken_got, taken_want = hierarchy.forgive(got, want)
+    return hit + forgiven, len(got - want) - len(taken_got), len(want - got) - len(taken_want)
+
+
 def score_fillable(
     task: TaskRecord,
     produced: dict[str, tuple[str, ...]],
     mentions: dict[str, str] | None = None,
     *,
     expected: dict[str, tuple[str, ...]] | None = None,
+    vocabulary: PropertyHierarchy | None = None,
 ) -> dict[Dimension, Score]:
     """Step two: were the slots the document fills the ones it named.
 
@@ -135,23 +151,42 @@ def score_fillable(
     the document never fills is a false positive, because the extract step is
     then made to demand a value that is not there; missing one is a false
     negative, because that value can no longer be reached at all.
+
+    Scored twice where the vocabulary declares a hierarchy. The strict count
+    is unchanged and remains the headline; the lenient one accepts a name the
+    vocabulary calls broader or narrower than the expected one, so the gap
+    between them separates the step choosing the wrong slot from the catalogue
+    offering two names for one reading. ``vocabulary`` defaults to the built
+    hierarchy and takes an explicit one in tests.
     """
+    from oold_llm_bench.grading.vocabulary import read_hierarchy
     from oold_llm_bench.steps.oracle import fillable_of
 
+    hierarchy = vocabulary if vocabulary is not None else read_hierarchy()
     wanted = expected if expected is not None else fillable_of(task)
     matched = match_entities(task, dict.fromkeys(produced, ()), mentions) if mentions else {}
-    hit = over = under = 0
+
+    strict = [0, 0, 0]
+    lenient = [0, 0, 0]
     seen: set[str] = set()
     for key, names in produced.items():
         expected_key = matched.get(key, key)
         seen.add(expected_key)
         want = set(wanted.get(expected_key, ()))
         got = set(names)
-        hit += len(got & want)
-        over += len(got - want)
-        under += len(want - got)
+        for row, counts in ((strict, _counts(got, want, None)), (lenient, _counts(got, want, hierarchy))):
+            row[0] += counts[0]
+            row[1] += counts[1]
+            row[2] += counts[2]
     for key, want in wanted.items():
         if key not in seen:
             # An entity the step never answered for still owes its slots.
-            under += len(want)
-    return {Dimension.FILLABLE: Score(true_positives=hit, false_positives=over, false_negatives=under)}
+            strict[2] += len(want)
+            lenient[2] += len(want)
+
+    out = {Dimension.FILLABLE: Score(true_positives=strict[0], false_positives=strict[1], false_negatives=strict[2])}
+    if hierarchy.parents:
+        out[Dimension.FILLABLE_NEAR] = Score(
+            true_positives=lenient[0], false_positives=lenient[1], false_negatives=lenient[2]
+        )
+    return out

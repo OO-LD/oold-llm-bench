@@ -8,6 +8,7 @@ scored on its own question, which is what makes a drop attributable.
 from __future__ import annotations
 
 from oold_llm_bench.grading.triples import Dimension
+from oold_llm_bench.grading.vocabulary import PropertyHierarchy, Relation, read_hierarchy
 from oold_llm_bench.steps import fillable_of, mentions_of, score_fillable, score_identify, shortlist_of
 from oold_llm_bench.tasks.models import CorpusRef, ExpectedInstance, Source, Split, TaskRecord
 
@@ -127,3 +128,103 @@ class TestScoringFillable:
     def test_an_entity_never_answered_for_still_owes_its_slots(self):
         out = score_fillable(self._task(), {})
         assert out[Dimension.FILLABLE].false_negatives == 2
+
+
+class TestAVocabularyThatOffersTwoNamesForOneReading:
+    """ "Written by Jane Doe" licenses `author` and `creator` both, and
+    Wikidata says so: P50 is a subproperty of P170. Charging a false positive
+    and a false negative for the wider name charges two errors for one answer.
+    """
+
+    def _hierarchy(self):
+        return PropertyHierarchy(
+            parents={"author": frozenset({"creator"}), "creator": frozenset()},
+            contested=frozenset({frozenset({"affiliation", "memberOf"})}),
+        )
+
+    def _task(self):
+        return task(ExpectedInstance(key="p1", class_path="Person", fields={"author": "Jane Doe"}))
+
+    def test_strict_scoring_is_unchanged_by_the_hierarchy(self):
+        """The headline number must not move when leniency is added beside it."""
+        out = score_fillable(self._task(), {"p1": ("creator",)}, vocabulary=self._hierarchy())
+        assert out[Dimension.FILLABLE].true_positives == 0
+        assert out[Dimension.FILLABLE].false_positives == 1
+        assert out[Dimension.FILLABLE].false_negatives == 1
+
+    def test_the_wider_name_is_a_hit_under_the_vocabulary(self):
+        out = score_fillable(self._task(), {"p1": ("creator",)}, vocabulary=self._hierarchy())
+        assert out[Dimension.FILLABLE_NEAR].true_positives == 1
+        assert out[Dimension.FILLABLE_NEAR].false_positives == 0
+        assert out[Dimension.FILLABLE_NEAR].false_negatives == 0
+
+    def test_an_unrelated_name_stays_wrong(self):
+        out = score_fillable(self._task(), {"p1": ("award",)}, vocabulary=self._hierarchy())
+        assert out[Dimension.FILLABLE_NEAR].true_positives == 0
+        assert out[Dimension.FILLABLE_NEAR].false_positives == 1
+
+    def test_one_wider_name_answers_one_slot_and_not_two(self):
+        """Two expected slots under one parent are not both paid for by naming it once."""
+        both = task(ExpectedInstance(key="p1", class_path="Person", fields={"author": "Jane", "illustrator": "Max"}))
+        hierarchy = PropertyHierarchy(
+            parents={"author": frozenset({"creator"}), "illustrator": frozenset({"creator"})},
+        )
+        out = score_fillable(both, {"p1": ("creator",)}, vocabulary=hierarchy)
+        assert out[Dimension.FILLABLE_NEAR].true_positives == 1
+        assert out[Dimension.FILLABLE_NEAR].false_negatives == 1
+
+    def test_no_hierarchy_reports_no_lenient_dimension(self):
+        """It would be the strict count under a second name."""
+        out = score_fillable(self._task(), {"p1": ("creator",)}, vocabulary=PropertyHierarchy(parents={}))
+        assert Dimension.FILLABLE_NEAR not in out
+
+
+class TestTheBuiltHierarchy:
+    def test_it_closes_over_both_vocabularies(self):
+        hierarchy = read_hierarchy()
+        assert "creator" in hierarchy.ancestors("author")
+        assert hierarchy.relation("creator", "author") is Relation.BROADER
+        assert hierarchy.relation("author", "creator") is Relation.NARROWER
+        assert hierarchy.relation("award", "author") is Relation.NONE
+
+    def test_a_chain_through_an_unoffered_property_still_connects(self):
+        """`birthDate` reaches `startDate` through `inception`, offered as neither."""
+        assert "startDate" in read_hierarchy().ancestors("birthDate")
+
+    def test_the_contested_pair_is_mutual_rather_than_dropped(self):
+        """Wikidata and schema.org order these opposite ways. Both edges stay."""
+        hierarchy = read_hierarchy()
+        assert frozenset({"affiliation", "memberOf"}) in hierarchy.contested
+        assert hierarchy.near("affiliation", "memberOf")
+        assert hierarchy.near("memberOf", "affiliation")
+
+    def test_a_missing_file_is_an_empty_hierarchy_rather_than_an_error(self, tmp_path):
+        assert read_hierarchy(tmp_path / "absent.json").parents == {}
+
+
+class TestACorpusThatDoesNotRecordEveryEntity:
+    """A Wikipedia lead names the subject's founder, its city and its parent
+    organisation, and only the subject is expected. Counting the rest as
+    inventions measures how much the document says, not how well the step
+    read it: measured, a step at entity recall 1.00 scored precision 0.11.
+    """
+
+    def _task(self, exhaustive: bool):
+        one = task(person())
+        return one.model_copy(update={"corpus": one.corpus.model_copy(update={"exhaustive": exhaustive})})
+
+    def test_a_generated_corpus_still_reports_f1(self):
+        from oold_llm_bench.steps.run import StepOutcome
+
+        out = StepOutcome(step="identify", dimensions=score_identify(self._task(True), {"e1": ("Person",)}))
+        assert out.metric == "f1"
+
+    def test_a_harvested_one_reports_recall(self):
+        """Not zero and not hidden: the counts are in the record, and the
+        number the cell reports is the one that can be read."""
+        from oold_llm_bench.steps.run import StepOutcome
+
+        found = score_identify(self._task(False), {"e1": ("Person",), "e2": ("Organization",)})
+        out = StepOutcome(step="identify", dimensions=found, metric="recall")
+        assert out.describe()["primary_f1"] == 1.0
+        assert found[Dimension.ENTITY].false_positives == 1, "the invention is still counted"
