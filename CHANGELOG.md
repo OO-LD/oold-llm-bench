@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.5.0 (2026-10-10)
+
+### Features
+
+- **corpus**: Offer an object-valued property as an object to fill
+  ([`a1ff28e`](https://github.com/OO-LD/oold-llm-bench/commit/a1ff28e491af6e49bf24b9f43cac49baf2d2afca))
+
+
 ## v0.4.2 (2026-10-10)
 
 ### Bug Fixes
