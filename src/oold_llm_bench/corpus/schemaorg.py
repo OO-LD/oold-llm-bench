@@ -2372,6 +2372,36 @@ _JSON_TYPE: dict[str, str] = {
 }
 
 
+_LEXICAL_PATTERN: dict[Kind, str] = {
+    Kind.DATE: r"^\d{4}-\d{2}-\d{2}$",
+    Kind.DATETIME: r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})?$",
+    Kind.TIME: r"^\d{2}:\d{2}(:\d{2})?$",
+    Kind.DURATION: r"^P(?!$)(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(?!$)(\d+H)?(\d+M)?(\d+S)?)?$",
+}
+"""The written form a lexical kind has to take, as a grammar can enforce it.
+
+The schemas carry ``format`` and nothing else, and ``format`` is an annotation
+JSON Schema does not require anyone to check, so no structured-output decoder
+enforces it. A date slot is then an unconstrained string: the corpus expects
+``1898-11-03`` and the document says "3 November 1898", and the model is free
+to answer either.
+
+Measured over the generated schema.org module, 250 property branches resolve
+to a leaf carrying only a ``format``: 101 datetime, 89 date, 33 duration, 27
+time. On the Wikidata leads the notation accounts for the most common wrong
+value there is.
+
+A pattern says the same thing where a grammar can act on it. It is a
+condition on the answer and not a fix to the grader, which is why both exist:
+:func:`~oold_llm_bench.grading.compare.same_value` still reads both notations
+as one value, so an arm whose grammar is advisory is not marked wrong for
+obeying the document instead of the pattern.
+
+No pattern for a number or a boolean, whose JSON type already says it, and
+none for text, which has no form to require.
+"""
+
+
 def slot_schema(slot: Slot, variant: Variant) -> dict[str, Any]:
     """One property as JSON Schema, with its enumeration when it has one.
 
@@ -2403,6 +2433,9 @@ def slot_schema(slot: Slot, variant: Variant) -> dict[str, Any]:
     one: dict[str, Any] = {"type": _JSON_TYPE.get(slot.kind.name, "string")}
     if slot.kind is Kind.ENUM and slot.choices:
         one["enum"] = list(slot.choices)
+    pattern = _LEXICAL_PATTERN.get(slot.kind)
+    if pattern:
+        one["pattern"] = pattern
     return {"type": "array", "items": one}
 
 

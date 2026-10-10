@@ -2086,3 +2086,48 @@ class TestASlotThatTakesSeveralValues:
         assert [t.value for t in make_triples("e1", {"name": ["X"]})] == [
             t.value for t in make_triples("e1", {"name": "X"})
         ]
+
+
+class TestALexicalKindCarriesItsForm:
+    """`format` is an annotation nobody has to check, so a grammar ignores it.
+
+    A date slot declared only `{"type": "string", "format": "date"}` is an
+    unconstrained string at decode time: the corpus expects `1898-11-03` and
+    the lead says "3 November 1898", and nothing in the schema prefers either.
+    """
+
+    def test_a_date_slot_requires_the_written_form(self):
+        import re
+
+        from oold_llm_bench.corpus.schemaorg import _LEXICAL_PATTERN, Kind
+
+        pattern = re.compile(_LEXICAL_PATTERN[Kind.DATE])
+        assert pattern.match("1898-11-03")
+        assert not pattern.match("3 November 1898")
+        assert not pattern.match("1903")
+
+    def test_a_duration_slot_requires_iso_8601(self):
+        import re
+
+        from oold_llm_bench.corpus.schemaorg import _LEXICAL_PATTERN, Kind
+
+        pattern = re.compile(_LEXICAL_PATTERN[Kind.DURATION])
+        assert pattern.match("PT1H30M")
+        assert not pattern.match("90 minutes")
+        assert not pattern.match("P")
+
+    def test_a_kind_whose_json_type_already_says_it_carries_none(self):
+        from oold_llm_bench.corpus.schemaorg import _LEXICAL_PATTERN, Kind
+
+        for kind in (Kind.TEXT, Kind.NUMBER, Kind.INTEGER, Kind.BOOLEAN, Kind.ENUM):
+            assert kind not in _LEXICAL_PATTERN
+
+    def test_the_generated_value_satisfies_the_pattern_it_is_graded_against(self):
+        """Or the corpus would ask for an answer its own draw cannot give."""
+        import re
+
+        from oold_llm_bench.corpus.schemaorg import _LEXICAL_PATTERN, _VALUE_BY_KIND
+
+        for kind, pattern in _LEXICAL_PATTERN.items():
+            drawn = [_VALUE_BY_KIND[kind](random.Random(seed)) for seed in range(40)]  # noqa: S311
+            assert all(re.match(pattern, str(value)) for value in drawn), (kind, drawn[:3])
