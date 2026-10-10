@@ -187,6 +187,19 @@ class TaskRecord(BaseModel):
     """What each offered class narrows, for a union constraint. Keyed by the
     identifier the catalogue uses, so a trim trims these with it."""
 
+    embedded_branches: dict[str, dict[str, Any]] | None = None
+    """The object-valued properties each offered class declares, keyed the same.
+
+    Carried beside ``branches`` rather than inside them, because whether an
+    answer may write an entity in place is a condition and not a fact about
+    the corpus. Folded in, every result taken before an embedding could be
+    expressed would be a result under a different answer shape, with nothing
+    in the record saying so.
+
+    ``None`` means the corpus never worked it out, which is not the same as
+    an empty mapping: a condition asking for an embedding is refused against
+    the first and honoured against the second."""
+
     class_parents: dict[str, list[str]] | None = None
     """Which classes each class inherits from.
 

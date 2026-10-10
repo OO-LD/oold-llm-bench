@@ -115,38 +115,52 @@ class Condition:
     JSON one. Declared instead of read off the arm name, because which
     extractor scores an arm is part of the treatment."""
 
+    embed_nested: bool = False
+    """Whether an object-valued property is offered as an object to fill.
+
+    Off by default, and that is the whole reason it is a field. Every result
+    so far was taken against an answer shape with no slot an entity could be
+    written into: a `Person` had nowhere to put a `PostalAddress`, so a plan
+    that found one produced an entity nothing on the page pointed at. Turning
+    that on silently would move the answer shape under every arm at once and
+    leave no record of which numbers were taken under which.
+
+    On, the offered classes' embeddings are added to the schema and to their
+    branches, so what the model is asked for is the entity in place rather
+    than an edge to one it has to state separately. Refused where the task
+    carries no embeddings to add, since a condition that quietly does nothing
+    writes a second row identical to the first."""
+
     @property
     def key(self) -> str:
-        """A short label, stable enough to group results by."""
-        parts = [self.arm, self.signal, self.vocabulary]
-        # A bare catalogue and a described one are two different prompts under
-        # one arm, so the key has to separate them or their results are
-        # averaged together under a name that fits neither.
-        if not self.describe_catalogue:
-            parts.append("bare")
-        if self.orchestration != "single_shot":
-            parts.append(f"{self.orchestration}(k{self.shortlist_k})")
-        if self.catalogue_size is not None:
-            parts.append(f"n{self.catalogue_size}")
-        # Four axes were missing here while the report key carried them, so
-        # two conditions differing only in pin_units produced the same
-        # run_id, wrote into one jsonl, and collapsed to one row in
-        # run.describe(). preflight reads the same key: a control scoring
-        # 0.50 on one and 0.00 on the other reports 0.25, which is exactly
-        # SPELLING_CEILING, so the gate that refuses a corpus could be
-        # defeated by the pooling rather than by the corpus.
-        if not self.pin_units:
-            parts.append("open-units")
-        if self.unit_match == "physical":
-            parts.append("physical")
-        if self.output_form != "json":
-            parts.append(self.output_form)
-        if self.plan_retry:
-            parts.append("retry")
-        if self.reasoning:
-            parts.append(f"think:{self.reasoning}")
-        if self.language:
-            parts.append(self.language)
+        """A short label, stable enough to group results by.
+
+        Every axis the study varies is in it, and the list below is the whole
+        of it. A bare catalogue and a described one are two different prompts
+        under one arm; an answer shape with a slot an entity can be written
+        into is a different question than one without.
+
+        Four axes were missing here while the report key carried them, so two
+        conditions differing only in ``pin_units`` produced the same run_id,
+        wrote into one jsonl, and collapsed to one row in ``run.describe()``.
+        preflight reads the same key: a control scoring 0.50 on one and 0.00
+        on the other reports 0.25, which is exactly ``SPELLING_CEILING``, so
+        the gate that refuses a corpus could be defeated by the pooling rather
+        than by the corpus.
+        """
+        optional = (
+            (not self.describe_catalogue, "bare"),
+            (self.orchestration != "single_shot", f"{self.orchestration}(k{self.shortlist_k})"),
+            (self.catalogue_size is not None, f"n{self.catalogue_size}"),
+            (not self.pin_units, "open-units"),
+            (self.unit_match == "physical", "physical"),
+            (self.output_form != "json", self.output_form),
+            (self.embed_nested, "embedded"),
+            (self.plan_retry, "retry"),
+            (bool(self.reasoning), f"think:{self.reasoning}"),
+            (bool(self.language), self.language or ""),
+        )
+        parts = [self.arm, self.signal, self.vocabulary, *(part for varied, part in optional if varied)]
         return "/".join(parts)
 
     def describe(self) -> dict[str, object]:
@@ -165,6 +179,7 @@ class Condition:
             "describe_catalogue": self.describe_catalogue,
             "pin_units": self.pin_units,
             "output_form": self.output_form,
+            "embed_nested": self.embed_nested,
         }
 
     def __post_init__(self) -> None:

@@ -59,6 +59,15 @@ class TestTheDeclaredGrids:
         assert rungs[0] == "no-catalog-not-enforced"
         assert all(rung.endswith("-enforced") for rung in rungs[1:])
 
+    def test_the_nested_slot_grid_moves_only_the_embedding(self):
+        """The cost of the embedding is in the prompt and the gain is in the
+        answer. Read apart they are two numbers nobody can divide, so the pair
+        holds everything else fixed."""
+        grid = GRIDS["nested-slot"]
+        assert {c.embed_nested for c in grid.conditions} == {False, True}
+        assert len({c.arm for c in grid.conditions}) == 1
+        assert len({c.catalogue_size for c in grid.conditions}) == 1
+
     def test_a_rung_can_be_run_on_its_own(self):
         """The top rung is 45,000 input tokens per call and the floor is 81.
         A reader who wants the floor should not pay for the rest."""

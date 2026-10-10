@@ -169,7 +169,7 @@ def wdc_tasks(per_class: int, pages: Path | None = None) -> list[TaskRecord]:
     fails the decode constraint outright rather than scoring badly, which
     reads as a finding about the corpus and is a missing field.
     """
-    from oold_llm_bench.corpus.schemaorg import Variant, answer_schema, branches_for, load_classes
+    from oold_llm_bench.corpus.schemaorg import Variant, answer_schema, branches_for, embedded_for, load_classes
     from oold_llm_bench.corpus.wdc import load_tasks
     from oold_llm_bench.playground.corpora import schemas_directory
 
@@ -180,16 +180,30 @@ def wdc_tasks(per_class: int, pages: Path | None = None) -> list[TaskRecord]:
     # Every class the corpus offers, not only the describable ones. A document
     # is read here rather than generated, so a class needs no slots of its own
     # to be worth offering: `Rating` declares two and carries a real value.
-    by_name = {cls.name: cls for cls in load_classes(schemas_directory())}
+    classes = load_classes(schemas_directory())
+    by_name = {cls.name: cls for cls in classes}
     present = [by_name[name] for name in offered if name in by_name]
     missing = [name for name in offered if name not in by_name]
     if missing:
         raise ValueError(f"the schema collection describes none of {missing}, which the wdc catalogue offers")
     shape = answer_schema(present, Variant.NATIVE)
     narrowed = branches_for(present, Variant.NATIVE)
+    # Resolved against the whole collection and not against the five offered
+    # classes. The ranges are `NutritionInformation`, `QuantitativeValue`,
+    # `MonetaryAmount` and the like, none of which this catalogue offers as an
+    # answer, so the offered set alone would attach an empty object to every
+    # embedding.
+    embedded = embedded_for(present, Variant.NATIVE, targets=classes)
     lineage = {cls.name: [parent for parent in cls.parents if parent in set(offered)] for cls in present}
     return [
-        task.model_copy(update={"answer_schema": shape, "branches": narrowed, "class_parents": lineage})
+        task.model_copy(
+            update={
+                "answer_schema": shape,
+                "branches": narrowed,
+                "embedded_branches": embedded,
+                "class_parents": lineage,
+            }
+        )
         for task in tasks
     ]
 

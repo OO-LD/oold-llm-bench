@@ -298,6 +298,8 @@ def _part_of(name: str, enforcement: dict[str, Any]) -> str | None:
         return "units" if value else None
     if name == "describe_catalogue":
         return "described" if value else None
+    if name == "embed_nested":
+        return "embedded" if value else None
     if name == "orchestration":
         return f"{value}(k{enforcement.get('shortlist_k')})" if value and value != "single_shot" else None
     if name == "plan_retry":
@@ -315,6 +317,7 @@ _KEY_AXES = (
     "catalogue_size",
     "pin_units",
     "describe_catalogue",
+    "embed_nested",
     "orchestration",
     "plan_retry",
     "unit_match",

@@ -32,6 +32,20 @@ KINDS = [
 ]
 CATALOGUE = tuple(k.name for k in KINDS)
 
+EMBEDDED = {
+    "Length": {
+        "madeOf": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"id": {"type": "string"}, "type": {"type": "string"}},
+                "required": ["type"],
+            },
+        }
+    }
+}
+"""One class's object-valued property, as a corpus would work it out."""
+
 
 class ScriptedClient:
     """Replies with whatever it was given, and remembers what it was asked."""
@@ -469,3 +483,87 @@ class TestACorpusThatBringsItsOwnShape:
             repetition=1,
         )
         assert build_request(cell).schema is ANSWER_SCHEMA
+
+
+class TestTheEmbeddingCondition:
+    """Whether an answer may write an entity in place, as a declared treatment.
+
+    The corpus works the embeddings out and carries them; the condition decides
+    whether they are offered. Moving the answer shape without a field to say so
+    would leave the numbers either side of the change pooled under one name.
+    """
+
+    def task_with_embeddings(self, embedded=None):
+        base = TestACorpusThatBringsItsOwnShape().task_with_shape()
+        return base.model_copy(update={"embedded_branches": EMBEDDED if embedded is None else embedded})
+
+    def cell_for(self, *, embed_nested: bool, embedded=None):
+        return Cell(
+            condition=Condition(
+                arm="schema-dump-catalog-enforced",
+                catalogue_size=3,
+                pin_units=False,
+                embed_nested=embed_nested,
+            ),
+            model=ModelSpec(model="m", provider_profile="openai", model_version="1"),
+            task=self.task_with_embeddings(embedded),
+            repetition=1,
+        )
+
+    def test_a_cell_that_does_not_ask_for_it_is_sent_what_it_was_sent_before(self):
+        """The claim that keeps every earlier result comparable."""
+        plain = Cell(
+            condition=Condition(arm="schema-dump-catalog-enforced", catalogue_size=3, pin_units=False),
+            model=ModelSpec(model="m", provider_profile="openai", model_version="1"),
+            task=TestACorpusThatBringsItsOwnShape().task_with_shape(),
+            repetition=1,
+        )
+        off = build_request(self.cell_for(embed_nested=False))
+        assert json.dumps(off.schema) == json.dumps(build_request(plain).schema)
+        assert json.dumps(off.branches) == json.dumps(build_request(plain).branches)
+
+    def test_asking_for_it_puts_the_object_in_the_answer_schema(self):
+        schema = build_request(self.cell_for(embed_nested=True)).schema
+        assert schema is not None
+        assert "madeOf" in schema["properties"]["entities"]["items"]["properties"]
+
+    def test_asking_for_it_puts_the_object_in_the_branch_that_declares_it(self):
+        branches = build_request(self.cell_for(embed_nested=True)).branches or {}
+        assert "madeOf" in branches["Length"]
+        assert "madeOf" not in branches["Mass"]
+
+    def test_a_class_the_cell_does_not_offer_contributes_nothing(self):
+        """The rule the trim already follows: a property belonging to a class
+        nobody offered gives an unconstrained arm somewhere wrong to answer."""
+        cell = Cell(
+            condition=Condition(
+                arm="schema-dump-catalog-enforced",
+                catalogue_size=1,
+                pin_units=False,
+                embed_nested=True,
+            ),
+            model=ModelSpec(model="m", provider_profile="openai", model_version="1"),
+            task=self.task_with_embeddings({"Duration": EMBEDDED["Length"]}),
+            repetition=1,
+        )
+        offered = set(build_agent(cell, ScriptedClient()).enforcement.catalogue or ())
+        schema = build_request(cell).schema
+        assert schema is not None
+        assert ("madeOf" in schema["properties"]["entities"]["items"]["properties"]) is ("Duration" in offered)
+
+    def test_a_task_that_worked_out_no_embeddings_refuses_the_condition(self):
+        """A condition that quietly does nothing writes a second row identical
+        to the first, which is the pooling the run id exists to prevent."""
+        cell = Cell(
+            condition=Condition(arm="schema-dump-catalog-enforced", catalogue_size=3, embed_nested=True),
+            model=ModelSpec(model="m", provider_profile="openai", model_version="1"),
+            task=task(),
+            repetition=1,
+        )
+        with pytest.raises(ValueError, match="no embedded properties"):
+            build_request(cell)
+
+    def test_a_task_that_worked_them_out_and_found_none_is_run(self):
+        """``None`` is the corpus never having looked. An empty mapping is a
+        true statement about classes that declare no object-valued property."""
+        assert build_request(self.cell_for(embed_nested=True, embedded={})).schema is not None

@@ -17,10 +17,12 @@ from oold_llm_bench.corpus.schemaorg import (
     Kind,
     Labelling,
     Link,
+    Nested,
     Notation,
     SchemaClass,
     Slot,
     answer_schema,
+    branches_for,
     canonical_date,
     canonical_duration,
     canonical_time,
@@ -30,6 +32,7 @@ from oold_llm_bench.corpus.schemaorg import (
     designating_slots,
     draw,
     draw_linked,
+    embedded_for,
     form_of,
     generate_pair,
     generate_task,
@@ -39,6 +42,7 @@ from oold_llm_bench.corpus.schemaorg import (
     linked_classes,
     load_classes,
     mentions_for,
+    nested_schema,
     opaque_name,
     property_identifier,
     rename_map,
@@ -2133,3 +2137,222 @@ class TestALexicalKindCarriesItsForm:
         for kind, pattern in _LEXICAL_PATTERN.items():
             drawn = [_VALUE_BY_KIND[kind](random.Random(seed)) for seed in range(40)]  # noqa: S311
             assert all(re.match(pattern, str(value)) for value in drawn), (kind, drawn[:3])
+
+
+class TestAnEmbeddedObjectIsSomethingAnAnswerCanFill:
+    """A link reaches an entity stated elsewhere; an embedding is the entity.
+
+    Nothing emitted the object until now, so ``Person.address`` had no slot a
+    ``PostalAddress`` fitted into. Observed on a document naming two people and
+    two street addresses: the plan holds two addresses and both arrive with
+    nothing pointing at them, because the answer shape had no key to write
+    them under.
+    """
+
+    def _address(self, corpus):
+        return next(item for item in corpus["Residence"].own_nested if item.name == "address")
+
+    def test_an_embedded_object_carries_the_slots_of_the_class_it_holds(self, corpus):
+        built = nested_schema(self._address(corpus), list(corpus.values()), Variant.NATIVE)
+        assert set(built["items"]["properties"]) >= {"streetAddress", "postalCode"}
+
+    def test_an_embedded_object_carries_an_id_so_anything_may_point_at_it(self, corpus):
+        """A serialisation choice and not an identity claim: the reader already
+        takes an embedded entity for one that may be pointed at, and the id is
+        what a segmented arm pins and what a later edge names."""
+        built = nested_schema(self._address(corpus), list(corpus.values()), Variant.NATIVE)
+        assert built["items"]["properties"]["id"]["type"] == "string"
+
+    def test_an_embedded_object_says_which_class_it_is(self, corpus):
+        built = nested_schema(self._address(corpus), list(corpus.values()), Variant.NATIVE)
+        assert built["items"]["required"] == ["type"]
+
+    def test_a_property_taking_two_objects_takes_a_list_of_them(self, corpus):
+        """The argument :func:`slot_schema` makes: a page annotating two
+        addresses states two, and a slot that forbids the true answer is not a
+        stricter slot."""
+        built = nested_schema(self._address(corpus), list(corpus.values()), Variant.NATIVE)
+        assert built["type"] == "array"
+
+    def test_several_ranges_become_one_object_holding_all_their_slots(self, corpus):
+        """Not an ``anyOf`` of one object per range. A union is only free where
+        a grammar enforces it and this corpus is also run against arms whose
+        schema is advisory, which is what :func:`slot_schema` measured."""
+        amenity = next(item for item in corpus["Residence"].own_nested if item.name == "amenityFeature")
+        built = nested_schema(amenity, list(corpus.values()), Variant.NATIVE)
+        assert amenity.ranges == ("PostalAddress", "QuantitativeValue")
+        assert "anyOf" not in built["items"]
+        assert set(built["items"]["properties"]) >= {"streetAddress", "value", "unitText"}
+
+    def test_the_target_contributes_the_slots_it_declares_and_not_the_rest(self, corpus):
+        """``Thing`` gives every class ``name``, so repeating it inside every
+        embedding would add a key that says nothing about the range."""
+        built = nested_schema(self._address(corpus), list(corpus.values()), Variant.NATIVE)
+        assert "name" in {slot.name for slot in corpus["PostalAddress"].slots}
+        assert "name" not in built["items"]["properties"]
+
+    def test_the_target_stops_at_the_catalogue_cap(self):
+        """One cap for the catalogue entry, the branches and the answer shape,
+        so an embedded property is one the entry for that class also shows."""
+        wide = SchemaClass(
+            name="Wide",
+            slots=tuple(Slot(name=f"p{n}", kind=Kind.TEXT) for n in range(CATALOGUE_SLOTS + 8)),
+        )
+        built = nested_schema(Nested(name="holds", ranges=("Wide",)), [wide], Variant.NATIVE)
+        assert len(built["items"]["properties"]) == CATALOGUE_SLOTS + 2
+
+    def test_a_range_the_collection_does_not_describe_contributes_nothing(self):
+        built = nested_schema(Nested(name="holds", ranges=("NobodyDeclaredThis",)), [], Variant.NATIVE)
+        assert set(built["items"]["properties"]) == {"id", "type"}
+
+    def test_the_renamed_variant_renames_the_slots_inside_the_object(self, corpus):
+        built = nested_schema(self._address(corpus), list(corpus.values()), Variant.RENAMED)
+        assert property_identifier("streetAddress", Variant.RENAMED) in built["items"]["properties"]
+        assert "streetAddress" not in built["items"]["properties"]
+
+
+class TestHowDeepAnEmbeddingGoes:
+    """The embedding graph has cycles, so the bound has to be structural.
+
+    ``PriceSpecification.eligibleTransactionVolume`` and
+    ``ShippingRateSettings.shippingRate`` point at their own class, and the
+    longest simple chain in the collection is 7 hops. A walk that stopped at a
+    class it had already seen would stop for a reason that depends on where it
+    started, so the counter is what ends it.
+    """
+
+    LOOP = SchemaClass(
+        name="PriceSpecification",
+        slots=(Slot(name="price", kind=Kind.NUMBER),),
+        nested=(Nested(name="eligibleTransactionVolume", ranges=("PriceSpecification",)),),
+    )
+
+    def _levels(self, built) -> int:
+        inner = built["items"]["properties"].get("eligibleTransactionVolume")
+        return 1 if inner is None else 1 + self._levels(inner)
+
+    def test_one_level_is_the_default(self):
+        built = nested_schema(self.LOOP.nested[0], [self.LOOP], Variant.NATIVE)
+        assert "price" in built["items"]["properties"]
+        assert "eligibleTransactionVolume" not in built["items"]["properties"]
+
+    def test_a_class_embedding_itself_terminates_at_the_depth_asked_for(self):
+        for depth in range(1, 6):
+            built = nested_schema(self.LOOP.nested[0], [self.LOOP], Variant.NATIVE, depth=depth)
+            assert self._levels(built) == depth
+
+    def test_the_second_level_holds_the_slots_of_the_class_below(self, corpus):
+        house = corpus["SingleFamilyResidence"]
+        rooms = next(item for item in house.own_nested if item.name == "numberOfRooms")
+        built = nested_schema(rooms, list(corpus.values()), Variant.NATIVE, depth=2)
+        assert "value" in built["items"]["properties"]
+
+
+class TestTheAnswerShapeIsUnchangedWithTheAxisOff:
+    """The claim that keeps every earlier result comparable.
+
+    A silent change to the answer shape would make the numbers taken before it
+    and the numbers taken after it two populations under one name, with nothing
+    in the record saying which was which. So the default is pinned by its bytes
+    rather than described.
+    """
+
+    def _digest(self, built) -> str:
+        return hashlib.sha256(json.dumps(built).encode("utf-8")).hexdigest()
+
+    @pytest.mark.parametrize(
+        ("variant", "digest"),
+        [
+            (Variant.NATIVE, "0a565c6bd20496b51629e10173037f8f62ed74cedcfab32f3177a16466ed2cad"),
+            (Variant.RENAMED, "6c0fc89a2a86a7d6ae20353b020b4e8f7e76896d09c7b483582ed65465f585f3"),
+        ],
+    )
+    def test_the_answer_schema_hashes_as_it_did(self, tmp_path, variant, digest):
+        write_corpus(tmp_path)
+        assert self._digest(answer_schema(load_classes(tmp_path), variant)) == digest
+
+    @pytest.mark.parametrize(
+        ("variant", "digest"),
+        [
+            (Variant.NATIVE, "848ae7691bf5f43dcaf13b5e295488382612ed2705710121f5b67e129d5523fd"),
+            (Variant.RENAMED, "3e9829c1a1afd8049aa8aad9398bf73d0e082adbb2878b40d13bd8526eb87dcb"),
+        ],
+    )
+    def test_the_branches_hash_as_they_did(self, tmp_path, variant, digest):
+        write_corpus(tmp_path)
+        assert self._digest(branches_for(load_classes(tmp_path), variant)) == digest
+
+    def test_asking_for_no_depth_asks_for_nothing(self, corpus):
+        """Zero is off and not a degenerate object, so the parameter means one
+        thing whether a caller passes it or leaves it alone."""
+        classes = list(corpus.values())
+        assert answer_schema(classes, Variant.NATIVE, embed_nested=0) == answer_schema(classes, Variant.NATIVE)
+        assert branches_for(classes, Variant.NATIVE, embed_nested=0) == branches_for(classes, Variant.NATIVE)
+
+
+class TestTheAnswerShapeWithTheAxisOn:
+    def test_the_answer_schema_gains_the_object_valued_properties(self, corpus):
+        classes = list(corpus.values())
+        built = answer_schema(classes, Variant.NATIVE, embed_nested=1)
+        properties = built["properties"]["entities"]["items"]["properties"]
+        assert properties["address"]["items"]["properties"]["streetAddress"]
+
+    def test_a_branch_gains_the_embeddings_its_class_declares(self, corpus):
+        narrowed = branches_for(list(corpus.values()), Variant.NATIVE, embed_nested=1)
+        assert "address" in narrowed["Residence"]
+        assert "address" not in narrowed["Book"]
+
+    def test_an_inherited_embedding_stays_out_of_the_branch(self, corpus):
+        """The preference :attr:`SchemaClass.own_nested` states: inheritance
+        turns 159 declarations into 309, and a class described by the addresses
+        an ancestor admits is described by its ancestor."""
+        narrowed = branches_for(list(corpus.values()), Variant.NATIVE, embed_nested=1)
+        assert "numberOfRooms" in narrowed["SingleFamilyResidence"]
+        assert "address" not in narrowed["SingleFamilyResidence"]
+
+    def test_a_range_is_resolved_against_the_collection_and_not_the_offered_set(self, corpus):
+        """``PostalAddress`` is a range no catalogue offers as an answer, so
+        resolving against the offered classes alone would attach an object with
+        an id, a type and no slots."""
+        offered = [corpus["Residence"]]
+        alone = embedded_for(offered, Variant.NATIVE)
+        wider = embedded_for(offered, Variant.NATIVE, targets=list(corpus.values()))
+        assert set(alone["Residence"]["address"]["items"]["properties"]) == {"id", "type"}
+        assert "streetAddress" in wider["Residence"]["address"]["items"]["properties"]
+
+    def test_a_class_declaring_no_embedding_is_left_out_of_the_delta(self, corpus):
+        assert "Book" not in embedded_for(list(corpus.values()), Variant.NATIVE)
+
+
+class TestAGeneratedTaskCarriesTheEmbeddingItDoesNotOffer:
+    """Worked out when the task is written, because a range resolves against
+    the whole collection and the runner holds one task and not the corpus it
+    came from."""
+
+    def _task(self, corpus):
+        return generate_task(
+            list(corpus.values()),
+            task_id="t",
+            seed=4,
+            n_slots=3,
+            draw_from=[corpus["Residence"]],
+            catalogue=("Residence",),
+        )
+
+    def test_a_named_task_records_what_each_offered_class_embeds(self, corpus):
+        task = self._task(corpus)
+        embedded = (task.embedded_branches or {})["Residence"]["address"]
+        assert "streetAddress" in embedded["items"]["properties"]
+
+    def test_the_answer_schema_of_that_task_still_holds_none_of_it(self, corpus):
+        """Carried and not folded in, or every result taken before would be a
+        result under a different answer shape."""
+        task = self._task(corpus)
+        assert "address" not in (task.answer_schema or {})["properties"]["entities"]["items"]["properties"]
+        assert "address" not in (task.branches or {})["Residence"]
+
+    def test_a_class_with_nothing_to_embed_records_an_empty_mapping(self):
+        """Which is not the same as recording nothing: the corpus looked, and a
+        condition asking for an embedding is honoured rather than refused."""
+        task = generate_task(CLASSES, task_id="t", seed=4, n_slots=3, catalogue=("Book",))
+        assert task.embedded_branches == {}

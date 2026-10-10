@@ -275,6 +275,7 @@ __all__ = [
     "designating_slots",
     "draw",
     "draw_linked",
+    "embedded_for",
     "expected_for",
     "form_of",
     "generate_pair",
@@ -286,6 +287,7 @@ __all__ = [
     "link_schema",
     "linked_classes",
     "load_classes",
+    "nested_schema",
     "opaque_name",
     "property_identifier",
     "property_phrase",
@@ -2450,11 +2452,141 @@ def link_schema() -> dict[str, Any]:
     return {"type": "object"}
 
 
+def nested_schema(
+    item: Nested,
+    targets: list[SchemaClass],
+    variant: Variant,
+    max_slots: int = CATALOGUE_SLOTS,
+    depth: int = 1,
+) -> dict[str, Any]:
+    """One embedded object as JSON Schema: an id, a type and the target's slots.
+
+    What :func:`link_schema` deliberately leaves out. A link reaches an entity
+    the answer writes down somewhere else, so a bare object is enough to carry
+    the edge and the target's own branch states the rest. An embedding has no
+    somewhere else: the entity stands where the property stands, and a
+    property declared ``{"type": "object"}`` gives a model no key to write the
+    street into. Observed on a document naming two people and two street
+    addresses: a detect step plans two ``PostalAddress`` entities, the answer
+    shape holds no slot either of them fits, and both arrive with nothing
+    pointing at them.
+
+    ``id`` is in it, and it says nothing about identity. An embedded entity is
+    a top-level entity written differently, which is the reading
+    :mod:`~oold_llm_bench.extract.json_answer` already takes of the answer: the
+    object may still point at others and be pointed at. The id is what a
+    segmented arm pins and what a later edge names, so leaving it out would
+    make the one shape that holds a whole entity the one shape nothing can
+    reach.
+
+    *Several ranges, one shape.* ``baseSalary`` embeds a ``MonetaryAmount`` or
+    a ``PriceSpecification`` and the property has to admit either. The ranges
+    are unioned into one object carrying the properties of all of them, rather
+    than written as an ``anyOf`` of one object per range, and
+    :func:`slot_schema`'s docstring is the argument: a union there was measured
+    and reverted, claude-sonnet-5 falling from 0.304 to 0.000 and
+    double-encoding the whole answer, because a union is only free where a
+    grammar enforces it and this corpus is also run against arms whose schema
+    is advisory. One shape per property is the instruction those arms can
+    follow, and 20 of the 159 embeddings the describable classes declare offer
+    more than one range.
+
+    The cost is the one :func:`answer_schema` already names for the flat union
+    over classes: the object admits a ``MonetaryAmount``'s currency on a
+    ``PriceSpecification``. It costs no information, because ``type`` inside
+    the object says which range the answer took and that is what the embedded
+    entity's class is graded against.
+
+    Declared slots only, as :func:`_implied_schema` takes them. ``Thing`` gives
+    every class ``name``, ``alternateName`` and ``url``, and repeating those
+    inside every embedding would add three keys per property that say nothing
+    about the class the property points at. Capped at ``max_slots``, the cap
+    :data:`CATALOGUE_SLOTS` states, so an embedded property is one the
+    catalogue entry for that class also shows.
+
+    ``depth`` is how many levels of object this emits, and it terminates on
+    that counter and on nothing else. The embedding graph has cycles,
+    ``PriceSpecification.eligibleTransactionVolume`` and
+    ``ShippingRateSettings.shippingRate`` pointing at their own class, so a
+    walk that stopped at a class it had already seen would stop for a reason
+    that depends on which class it started from. At the default of 1 the
+    embedded object carries slots and no further embeddings; each level below
+    is one more hop of a chain that runs to 7 in this collection, and the
+    measured cost of the second level is in :func:`answer_schema`.
+
+    An array, for the reason :func:`slot_schema` gives: a schema.org property
+    takes one value or several, a page annotating two addresses states two,
+    and a slot that forbids the true answer is not a stricter slot.
+    """
+    by_name = {cls.name: cls for cls in targets}
+    properties: dict[str, Any] = {
+        "id": {
+            "type": "string",
+            "description": "A short identifier for this entity, so another entity can point at it.",
+        },
+        "type": {
+            "type": "string",
+            "description": "The class this entity is an instance of.",
+        },
+    }
+    for name in item.ranges:
+        target = by_name.get(name)
+        if target is None:
+            continue
+        for slot in target.own_slots[:max_slots]:
+            properties.setdefault(property_identifier(slot.name, variant), slot_schema(slot, variant))
+        if depth > 1:
+            for inner in target.own_nested:
+                properties.setdefault(
+                    property_identifier(inner.name, variant),
+                    nested_schema(inner, targets, variant, max_slots, depth - 1),
+                )
+    return {"type": "array", "items": {"type": "object", "properties": properties, "required": ["type"]}}
+
+
+def embedded_for(
+    classes: list[SchemaClass],
+    variant: Variant,
+    max_slots: int = CATALOGUE_SLOTS,
+    depth: int = 1,
+    targets: list[SchemaClass] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """The embedded objects each class declares, keyed as the catalogue keys it.
+
+    The difference between an answer shape that admits an embedding and one
+    that does not, on its own, so a task generated without it can be offered it
+    later without being generated again. :func:`branches_for` and
+    :func:`answer_schema` fold it in; the runner adds it per condition.
+
+    ``targets`` is the collection an embedded range is resolved against and
+    defaults to ``classes``. It is usually wider: the commonest ranges are
+    ``QuantitativeValue`` and ``PostalAddress``, neither of which a catalogue
+    offers as an answer, so resolving against the offered classes alone would
+    emit an object with an id, a type and no slots.
+
+    Declared embeddings only, by :attr:`SchemaClass.own_nested`, for the
+    reason that attribute gives: inheritance turns 159 declarations into 309,
+    and a class described by the addresses an ancestor admits is described by
+    its ancestor.
+    """
+    collection = classes if targets is None else targets
+    return {
+        class_identifier(cls.name, variant): {
+            property_identifier(item.name, variant): nested_schema(item, collection, variant, max_slots, depth)
+            for item in cls.own_nested
+        }
+        for cls in classes
+        if cls.own_nested
+    }
+
+
 def branches_for(
     classes: list[SchemaClass],
     variant: Variant,
     max_slots: int = CATALOGUE_SLOTS,
     with_links: bool = False,
+    embed_nested: int = 0,
+    targets: list[SchemaClass] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """What each class narrows, keyed by the identifier the catalogue uses.
 
@@ -2465,12 +2597,19 @@ def branches_for(
 
     ``with_links`` is off for the same reason it is off in
     :func:`render_class`.
+
+    ``embed_nested`` is the depth :func:`nested_schema` renders to, and zero
+    for not at all. Off by default, so a branch set is what it was before an
+    embedding could be expressed and the results taken against it stay
+    comparable.
     """
+    embedded = embedded_for(classes, variant, max_slots, embed_nested, targets) if embed_nested else {}
     return {
         class_identifier(cls.name, variant): {
             property_identifier(slot.name, variant): slot_schema(slot, variant) for slot in cls.slots[:max_slots]
         }
         | ({property_identifier(link.name, variant): link_schema() for link in cls.own_links} if with_links else {})
+        | embedded.get(class_identifier(cls.name, variant), {})
         for cls in classes
     }
 
@@ -2480,6 +2619,8 @@ def answer_schema(
     variant: Variant,
     max_slots: int = CATALOGUE_SLOTS,
     with_links: bool = False,
+    embed_nested: int = 0,
+    targets: list[SchemaClass] | None = None,
 ) -> dict[str, Any]:
     """The shape an answer takes for this corpus.
 
@@ -2487,6 +2628,16 @@ def answer_schema(
     somewhere to put its answer. That is exactly the flat union the
     orchestration exists to avoid: it admits `alumniOf` on an `Organization`,
     and nothing in it says which class allows which property.
+
+    ``embed_nested`` is what it costs to let an answer carry an entity in
+    place, and it is off by default so no measured result moves underneath a
+    run. Measured over the 108 describable classes of this collection: flat,
+    the union is 497 keys and the whole schema holds 498 property entries. One
+    level of embedding takes the union to 600 and the schema to 1,247, because
+    an embedded object states its target's slots inline and most of the growth
+    is below the top level rather than in it. A second level leaves the union
+    at 600 and takes the schema to 2,320, which is the price of a shape nobody
+    has asked a model for yet.
     """
     properties: dict[str, Any] = {
         "type": {
@@ -2494,12 +2645,19 @@ def answer_schema(
             "description": "The class this entity is an instance of.",
         }
     }
+    collection = classes if targets is None else targets
     for cls in classes:
         for slot in cls.slots[:max_slots]:
             properties.setdefault(property_identifier(slot.name, variant), slot_schema(slot, variant))
         if with_links:
             for link in cls.own_links:
                 properties.setdefault(property_identifier(link.name, variant), link_schema())
+        if embed_nested:
+            for item in cls.own_nested:
+                properties.setdefault(
+                    property_identifier(item.name, variant),
+                    nested_schema(item, collection, variant, max_slots, embed_nested),
+                )
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "Entities",
@@ -2609,6 +2767,7 @@ def _task_from(
     chosen = {class_identifier(cls.name, variant) for cls in classes} & set(catalogue or ())
     by_identifier = {class_identifier(cls.name, variant): cls for cls in classes}
     offered = [by_identifier[name] for name in chosen]
+    embedded: dict[str, dict[str, Any]] | None = None
     if labelling is Labelling.IMPLIED:
         shape, narrowed, lineage = _implied_schema(offered, variant)
     else:
@@ -2623,6 +2782,13 @@ def _task_from(
             needed |= _ancestors_of(cls.name, classes)
         family = [cls for cls in classes if cls.name in needed]
         narrowed = branches_for(family, variant, with_links=linked) if family else None
+        # Worked out whether or not anything will ask for it, because the
+        # ranges resolve against the whole collection and the runner holds
+        # one task, not the corpus it came from. Left out under
+        # `Labelling.IMPLIED`, which refuses a link for the same reason: there
+        # a value points at its slot by its form alone, and an object has no
+        # form on the page at all.
+        embedded = embedded_for(family, variant, targets=classes) if family else None
         lineage = (
             {
                 class_identifier(cls.name, variant): [class_identifier(p, variant) for p in cls.parents if p in needed]
@@ -2661,6 +2827,7 @@ def _task_from(
         catalogue_text=described,
         answer_schema=shape,
         branches=narrowed,
+        embedded_branches=embedded,
         class_parents=lineage,
         property_ranges=_ranges_of(offered) or None,
     )

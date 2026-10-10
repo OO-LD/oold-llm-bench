@@ -136,6 +136,15 @@ class TestTheGrid:
         ).key
         assert key == "schema-dump-catalog-flat-enforced/translated/consensus/n25/de"
 
+    def test_two_conditions_differing_only_in_the_embedding_keep_two_keys(self):
+        """Four axes were once missing from this key, so two conditions wrote
+        into one jsonl and collapsed to one row. An answer shape with a slot an
+        entity can be written into is a fifth."""
+        plain = Condition(arm="schema-dump-catalog-flat-enforced")
+        embedded = Condition(arm="schema-dump-catalog-flat-enforced", embed_nested=True)
+        assert plain.key != embedded.key
+        assert embedded.key.endswith("embedded")
+
     def test_runs_per_cell_is_fixed_before_running(self):
         """Choosing it after seeing results turns noise into a finding."""
         assert config().describe()["runs_per_cell"] == 2

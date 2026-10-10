@@ -234,6 +234,16 @@ _STEP_CONDITIONS = (
     ),
 )
 
+_NESTED_SLOT = (
+    _STEP_CONDITIONS[0],
+    replace(_STEP_CONDITIONS[0], embed_nested=True),
+)
+"""One arm, one catalogue, the answer shape with and without a slot to nest in.
+
+Paired on purpose. The cost of the embedding is in the prompt and the gain is
+in the answer, and read apart they are two numbers nobody can divide.
+"""
+
 _SCHEMAORG_UNION = tuple(
     # pin_units is meaningless here: schema.org declares no unit slot, so
     # there is nothing for the enum to close. Left at the default and said
@@ -365,6 +375,26 @@ GRIDS: dict[str, Grid] = {
                 "precision counts the rest of the page as invention. `grounded` is the "
                 "check that keeps recall honest, since it asks whether a produced value is "
                 "in the text at all."
+            ),
+        ),
+        Grid(
+            name="nested-slot",
+            summary="The same pages, answered with a slot to nest an entity in and without one",
+            conditions=_NESTED_SLOT,
+            tasks=_wdc,
+            per_class=30,
+            dimensions=("class", "entity:recall", "property:recall", "value:recall", "grounded"),
+            needs_schemas=False,
+            workers=12,
+            notes=(
+                "The pair wdc-nested was run as half of. Same documents, same truth, two ways of "
+                "writing the answer: off, an entity held inside another has to be recovered as a "
+                "separate entity with an edge to it, which is what the page's markup flattened it "
+                "into; on, the property that held it is an object the answer fills in place. The "
+                "catalogue is five classes and four of them declare an embedding, so turning it on "
+                "takes the answer schema from 41 properties and 3.4 kB to 48 and 7.9 kB. That is "
+                "the cost, and the difference between the two rows is what it bought. Recall and "
+                "not F1, for the reason wdc-nested gives."
             ),
         ),
         Grid(

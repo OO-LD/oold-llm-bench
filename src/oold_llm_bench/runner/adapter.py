@@ -241,6 +241,24 @@ def _catalogue_for(cell: Cell) -> tuple[str, ...] | None:
     return _catalogue_of(cell)
 
 
+def _embedded_of(cell: Cell) -> dict[str, dict[str, Any]]:
+    """The object-valued properties this cell may answer in place.
+
+    Empty unless the condition asks for them, so a cell that does not declare
+    the axis is sent exactly what it was sent before the axis existed.
+
+    A task that worked out no embeddings is refused rather than run, because
+    the two conditions would then send one request under two names and the
+    pair meant to measure the axis would report the axis as free.
+    """
+    if not cell.condition.embed_nested:
+        return {}
+    embedded = cell.task.embedded_branches
+    if embedded is None:
+        raise ValueError(f"task {cell.task.id} carries no embedded properties, so embed_nested has nothing to offer")
+    return embedded
+
+
 def _branches_of(cell: Cell) -> dict[str, dict[str, Any]] | None:
     """What each offered class narrows, for a union constraint.
 
@@ -249,7 +267,8 @@ def _branches_of(cell: Cell) -> dict[str, dict[str, Any]] | None:
     quantity corpus working without having to describe itself twice.
     """
     if cell.task.branches:
-        return dict(cell.task.branches)
+        embedded = _embedded_of(cell)
+        return {name: branch | embedded.get(name, {}) for name, branch in cell.task.branches.items()}
     per_class = cell.task.unit_catalogue
     if not per_class:
         return None
@@ -264,9 +283,18 @@ def _answer_schema_of(cell: Cell, catalogue: tuple[str, ...] | None) -> dict[str
     the classes are on offer overstates what the arm was asked to handle, and
     leaves an unconstrained arm free to answer with a property no offered
     class defines.
+
+    An embedding condition adds back what the corpus left out, and only for
+    the offered classes, which is the same rule the trim follows. An arm shown
+    no catalogue gets nothing added: there is no offered set to add it for,
+    and the whole schema would then say an entity may be written in place
+    without saying of what.
     """
     schema = cell.task.answer_schema
+    embedded = _embedded_of(cell)
     branches = cell.task.branches
+    if branches and embedded:
+        branches = {name: branch | embedded.get(name, {}) for name, branch in branches.items()}
     if not schema or not branches or catalogue is None:
         return schema
 
@@ -285,7 +313,7 @@ def _answer_schema_of(cell: Cell, catalogue: tuple[str, ...] | None) -> dict[str
     defined = {prop for branch in branches.values() for prop in branch}
     items["properties"] = {
         name: definition for name, definition in properties.items() if name in keep or name not in defined
-    }
+    } | {prop: definition for name in offered for prop, definition in embedded.get(name, {}).items()}
     return trimmed
 
 

@@ -210,6 +210,20 @@ def test_reasoning_is_in_the_key():
     assert _condition_key(off, off) != _condition_key(plain, plain)
 
 
+def test_the_embedding_is_in_the_key_and_in_the_label():
+    """An axis on Condition and not in the report key pools two treatments
+    under one row, which is the one thing the report is not allowed to do."""
+    from oold_llm_bench.report.axes import label_of
+    from oold_llm_bench.report.table import _condition_key
+    from oold_llm_bench.runner import Condition
+
+    arm = "catalog-enforced"
+    on = Condition(arm=arm, signal="named", describe_catalogue=True, embed_nested=True).describe()
+    off = Condition(arm=arm, signal="named", describe_catalogue=True).describe()
+    assert _condition_key(on, on) != _condition_key(off, off)
+    assert label_of(arm, on) != label_of(arm, off)
+
+
 def test_every_arm_the_library_defines_has_a_published_name():
     """An arm whose name does not parse has no place in a result table.
 

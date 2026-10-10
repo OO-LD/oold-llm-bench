@@ -17,11 +17,12 @@ also shows which pairs were never run, because a name that describes nothing
 is a gap rather than an omission.
 
 A cell's label is parsed from its arm rather than looked up, so an arm added
-to the registry has a published name the moment it is named correctly. The one
-thing the arm cannot say is how much the catalogue tells about each class,
-because ``describe_catalogue`` is a property of the run: an arm says
-``catalog`` and a label resolves that to ``schema-prose-catalog`` or
-``schema-prose-full-catalog``.
+to the registry has a published name the moment it is named correctly. What
+the arm cannot say is what the run decided around it. How much the catalogue
+tells about each class is one: an arm says ``catalog`` and a label resolves
+that to ``schema-prose-catalog`` or ``schema-prose-full-catalog``. Whether the
+answer shape offered a slot to nest an entity in is the other, and it reads as
+a trailing ``-embedded``.
 """
 
 from __future__ import annotations
@@ -72,9 +73,13 @@ _ACCEPTS = ("not-enforced", "flat-enforced", "enforced")
 def label_of(arm: str, enforcement: dict[str, Any]) -> str:
     """The composed name for one cell, as ``context-enforcement``.
 
-    ``enforcement`` is the record's own enforcement dict. Only
-    ``describe_catalogue`` is read from it, because that is the one part of
-    the context the arm does not fix.
+    ``enforcement`` is the record's own enforcement dict. Two things are read
+    from it, and both for the same reason: they are parts of the treatment the
+    arm does not fix. ``describe_catalogue`` says how much the catalogue tells
+    about each class, and ``embed_nested`` says whether the answer shape held
+    a slot an entity could be written into. Two cells differing only in the
+    second are two different questions asked of the model, so they are two
+    rows.
     """
     name = LEGACY_ARM_NAMES.get(arm, arm)
     carries = next((c for c in _CARRIES if name == c or name.startswith(f"{c}-")), None)
@@ -90,4 +95,5 @@ def label_of(arm: str, enforcement: dict[str, Any]) -> str:
         # The arm says the catalogue is in the prompt. How much it says about
         # each class is a condition, so the label resolves it here.
         carries = "schema-prose-full-catalog" if enforcement.get("describe_catalogue") else "schema-prose-catalog"
-    return f"{carries}-{accepts}{qualifiers}"
+    embedded = "-embedded" if enforcement.get("embed_nested") else ""
+    return f"{carries}-{accepts}{qualifiers}{embedded}"
