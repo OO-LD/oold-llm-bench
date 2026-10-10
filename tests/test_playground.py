@@ -1919,3 +1919,37 @@ class TestPlaygroundCredentials:
         import os
 
         assert os.environ["OOLD_BENCH_TEST_VAR"] == "from-shell"
+
+
+@needs_schemaorg
+class TestADrawAsksForMoreThanAClassHas:
+    """A pool is built on a floor and a draw asks for a number.
+
+    `Thing` declares exactly three properties of its own and the pool admits
+    three, so a four-slot draw that reached it raised instead of drawing a
+    class that could answer. The seed decides which class a draw lands on, so
+    the failure appears and disappears as the pool changes size.
+    """
+
+    def test_a_class_too_shallow_for_the_draw_is_not_drawn_from(self):
+        from oold_llm_bench.playground.corpora import _deep_enough
+
+        corpus = load_schemaorg()
+        shallow = [cls for cls in corpus.describable if len(cls.own_slots) < 4]
+        assert shallow, "the collection no longer holds a class this test is about"
+        kept = {cls.name for cls in _deep_enough(corpus.describable, 4)}
+        assert kept.isdisjoint({cls.name for cls in shallow})
+
+    def test_every_generated_document_asks_for_what_its_class_can_give(self):
+        corpus = load_schemaorg()
+        for n_slots in (4, 6):
+            tasks = schemaorg_tasks(corpus, count=12, seed=1, n_slots=n_slots)
+            assert len(tasks) == 12
+            for task in tasks:
+                for instance in task.expected:
+                    assert len(instance.fields) >= 1
+
+    def test_a_sequence_draw_asks_the_same_question(self):
+        corpus = load_schemaorg()
+        tasks = sequence_tasks(corpus, count=2, seed=5, n_documents=3, n_slots=6)
+        assert tasks

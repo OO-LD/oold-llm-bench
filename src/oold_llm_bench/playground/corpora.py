@@ -93,9 +93,25 @@ literal at both call sites.
 MIN_OWN_SLOTS = 3
 """How many properties of its own a class needs to be worth describing.
 
-The same threshold the fine-tuning pipeline uses, so the 122 classes here are
-the 122 classes there and a playground run is comparable to a grid cell.
+The same threshold the fine-tuning pipeline uses, so the classes here are the
+classes there and a playground run is comparable to a grid cell.
+
+It is the floor for the pool and not for a draw. A caller asking for more
+slots than a class declares has to narrow the pool itself, which is what
+:func:`_deep_enough` does: ``Thing`` declares exactly three and a four-slot
+draw that reached it raised rather than drawing a different class.
 """
+
+
+def _deep_enough(pool: list[so.SchemaClass], n_slots: int) -> list[so.SchemaClass]:
+    """The classes that can supply a draw of this many properties.
+
+    Narrowed here and not by lowering ``n_slots`` to what a class happens to
+    have. A document drawn from fewer properties than asked is a different
+    document, and a corpus that quietly shortened some of them would report a
+    model as answering a four-slot task it was never given.
+    """
+    return [cls for cls in pool if len(cls.own_slots) >= n_slots]
 
 
 class MissingSchemas(RuntimeError):
@@ -185,9 +201,11 @@ def schemaorg_tasks(
     The seed is the whole of the randomness, so a task id here names the same
     document as a task id in a grid run with the same seed.
     """
-    pool = corpus.linked if linked else corpus.describable
+    pool = _deep_enough(corpus.linked if linked else corpus.describable, n_slots)
     if not pool:
-        raise MissingSchemas("the schema collection has no class that can carry an edge")
+        raise MissingSchemas(
+            f"no class in the schema collection declares the {n_slots} properties a document is drawn from"
+        )
     catalogue = corpus.catalogue
     return [
         so.generate_task(
@@ -290,11 +308,11 @@ def sequence_tasks(
     """
     from oold_llm_bench.corpus.sequence import generate_sequence, tasks_of
 
-    pool = [cls for cls in corpus.describable if so.designating_slots(cls)]
+    pool = _deep_enough([cls for cls in corpus.describable if so.designating_slots(cls)], n_slots)
     if not pool:
         raise MissingSchemas(
-            "no describable class in this schema collection names its entries by a text slot, "
-            "so no sequence can be drawn"
+            "no describable class in this schema collection names its entries by a text slot and "
+            f"declares the {n_slots} properties a sequence is drawn from"
         )
     tasks: list[TaskRecord] = []
     for index in range(count):
