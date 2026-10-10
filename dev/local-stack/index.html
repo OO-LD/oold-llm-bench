@@ -994,7 +994,7 @@ is the one vLLM loads: no merge, no GGUF conversion, no Hub round trip. The
 Hub is then publication rather than plumbing.</p>
 <p><code>lora_path</code> is documented only with local paths, and that reading was too
 cautious. Measured 2026-10-03 against vLLM 0.30.0: posting
-<code>{"lora_name": "probe-hub", "lora_path": "OO-LD/oold-lean-qwen4b-r16-s1000"}</code>
+<code>{"lora_name": "probe-hub", "lora_path": "OO-LD/oold-quantities-lean-qwen4b-r16-s1000"}</code>
 returns 200, the adapter appears in <code>/v1/models</code>, and no plugin was loaded.
 So a tune reaches the benchmark with no compose change at all: train, push,
 POST, run.</p>
