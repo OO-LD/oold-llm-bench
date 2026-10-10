@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v0.3.0 (2026-10-10)
+
+### Features
+
+- **corpus**: Read an object-valued property as an embedding
+  ([`f12fbba`](https://github.com/OO-LD/oold-llm-bench/commit/f12fbbafb1cc7ef0d173f1da184a9a54b0e5d16a))
+
+- **experiments**: Declare a grid over the pages that nest entities
+  ([`a14fa16`](https://github.com/OO-LD/oold-llm-bench/commit/a14fa165b627188a4e8dfbae5be0c2e70d7b59c1))
+
+- **graph**: Draw an embedded entity apart from a top-level one
+  ([`d004272`](https://github.com/OO-LD/oold-llm-bench/commit/d00427222aa3f20a850c229c318b4d18316c1676))
+
+
 ## v0.2.0 (2026-10-10)
 
 ### Bug Fixes
