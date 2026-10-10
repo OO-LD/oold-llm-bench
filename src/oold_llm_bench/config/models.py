@@ -65,6 +65,20 @@ class ModelEntry:
     it: a prompt carrying a schema arrives counted at five tokens. Where this
     is ``False`` the system content is folded into the user turn, so the model
     is asked the same question the others are asked."""
+    thinks_unless_told: bool = False
+    """Whether the deployment reasons before answering unless asked not to.
+
+    A thinking model spends its completion budget on reasoning tokens first.
+    Measured on ``qwen3.5-9b`` at a 64-token budget: 64 reasoning tokens,
+    ``finish_reason`` ``length``, and ``content`` ``None``. Every cell comes
+    back empty, and nothing about it reads as a thinking problem: the models
+    endpoint answers in 0.3 seconds and the run simply produces no answers.
+
+    Where this is set the thinking switch is sent off by default, so a grid
+    that says nothing about reasoning gets an answer rather than silence. A
+    condition naming a reasoning level is still obeyed, because asking for
+    thinking is a thing a study does on purpose.
+    """
     accepts_temperature: bool = True
     """Some newer models reject the parameter outright. Sending it fails the
     call, and recording a temperature that was never sent would be worse: the
@@ -103,6 +117,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_4b",
+        thinks_unless_told=True,
         notes=(
             "Qwen3.5-4B on vLLM 0.30.0, guidance backend. Measured 2026-10-03: "
             "free decoding answers 'metres', json_schema answers 'meter', so "
@@ -117,6 +132,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_4b",
+        thinks_unless_told=True,
         notes=(
             "The same weights as qwen3.5-4b, under the name a Hugging Face "
             "endpoint serves them by. An endpoint built from a repository "
@@ -140,6 +156,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_4b",
+        thinks_unless_told=True,
         notes=(
             "OO-LD/oold-quantities-lean-qwen4b-r16-s1000, trained on HF Jobs at "
             "r=16 for 1000 steps with target_modules all-linear. The recipe "
@@ -163,6 +180,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_4b",
+        thinks_unless_told=True,
         notes=(
             "Qwen3.5-4B with the LoRA adapter "
             "SimonTaurus/Qwen3.5-4B-oold-quantities-bf16-e2, r=16, served by "
@@ -187,6 +205,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_4b",
+        thinks_unless_told=True,
         notes=(
             "SimonTaurus/Qwen3.5-4B-oold-lean-r64-s2000, trained on HF "
             "Jobs on the same lean dataset as the r=16 adapter. The sweep "
@@ -210,6 +229,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_4b",
+        thinks_unless_told=True,
         notes=(
             "SimonTaurus/Qwen3.5-4B-oold-lean-r128-s2000, trained on HF "
             "Jobs on the same lean dataset as the r=16 adapter. The sweep "
@@ -233,6 +253,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_4b",
+        thinks_unless_told=True,
         notes=(
             "SimonTaurus/Qwen3.5-4B-oold-lean-r64-s6000, trained on HF "
             "Jobs on the same lean dataset as the r=16 adapter. The sweep "
@@ -256,6 +277,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_4b",
+        thinks_unless_told=True,
         notes=(
             "OO-LD/oold-quantities-lean-qwen4b-r64-s1000, trained on the box. "
             "Rank raised fourfold, exposure held. Final training loss 0.8319 against the baseline's 0.8320. "
@@ -279,6 +301,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_4b",
+        thinks_unless_told=True,
         notes=(
             "OO-LD/oold-quantities-lean-qwen4b-r16-s4000, trained on the box. "
             "Exposure raised fourfold, rank held. Final training loss 0.7689 against the baseline's 0.8320. "
@@ -302,6 +325,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_4b",
+        thinks_unless_told=True,
         notes=(
             "OO-LD/oold-quantities-lean-20k-qwen4b-r16-s10000. Twenty thousand "
             "examples, one pass, r=16. Rank and repetition were both ruled "
@@ -319,6 +343,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_9b",
+        thinks_unless_told=True,
         notes=(
             "The same weights as qwen3.5-9b, under the name a Hugging Face "
             "endpoint built from the repository answers to. See the 4B entry "
@@ -339,6 +364,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_9b",
+        thinks_unless_told=True,
         notes=(
             "OO-LD/oold-quantities-lean-qwen9b-r16-s1000. the baseline recipe, retrained with all-linear so the sweep differs in one thing. Swept at the context "
             "floor only, because that is the one rung where a tune is worth "
@@ -360,6 +386,7 @@ LADDER: tuple[ModelEntry, ...] = (
             "pin_units": False,
             "catalogue_size": 100,
         },
+        thinks_unless_told=True,
         notes=(
             "OO-LD/oold-quantities-lean-qwen9b-r16-s1000-matched. The exposure control: "
             "byte-identical to the 4000-step payload but for max_steps, and "
@@ -383,6 +410,7 @@ LADDER: tuple[ModelEntry, ...] = (
             "pin_units": False,
             "catalogue_size": 100,
         },
+        thinks_unless_told=True,
         notes=(
             "OO-LD/oold-quantities-lean-qwen9b-r16-s1000-linattn. The middle "
             "rung of the module ladder: text projections plus linear_attn, no "
@@ -405,6 +433,7 @@ LADDER: tuple[ModelEntry, ...] = (
             "pin_units": False,
             "catalogue_size": 100,
         },
+        thinks_unless_told=True,
         notes=(
             "OO-LD/oold-quantities-lean-qwen9b-r16-s4000. Exposure raised fourfold "
             "against qwen3.5-9b-r16-s1000-matched, every other field held. "
@@ -425,6 +454,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_9b",
+        thinks_unless_told=True,
         notes=(
             "OO-LD/oold-quantities-lean-qwen9b-r64-s1000. rank raised fourfold, exposure held. Swept at the context "
             "floor only, because that is the one rung where a tune is worth "
@@ -446,6 +476,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_9b",
+        thinks_unless_told=True,
         notes=(
             "Qwen3.5-9B with the LoRA adapter "
             "OO-LD/oold-quantities-qwen9b-r16-e2-modulelist, r=16. Same "
@@ -459,6 +490,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="small",
         family="qwen",
         transport="vllm_9b",
+        thinks_unless_told=True,
         notes="Qwen3.5-9B on vLLM 0.30.0, guidance backend, same grammar as the 4B.",
     ),
     ModelEntry(
@@ -503,6 +535,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="mid",
         family="qwen",
         transport="vllm_27b",
+        thinks_unless_told=True,
         notes=(
             "unsloth/Qwen3.5-27B on vLLM 0.30.0, bf16, tensor parallel over "
             "both A40s. The third rung of a same-family ladder: the 4B and "
@@ -521,6 +554,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="mid",
         family="qwen",
         transport="vllm_27b",
+        thinks_unless_told=True,
         notes="The third rung of the same-family ladder, as the endpoint names it.",
     ),
     ModelEntry(
@@ -537,6 +571,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="mid",
         family="qwen",
         transport="vllm_27b",
+        thinks_unless_told=True,
         notes=(
             "OO-LD/oold-quantities-lean-qwen27b-r16-s1000, the same r=16 "
             "all-linear recipe as every other adapter here. Completes the "
@@ -550,6 +585,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="mid",
         family="qwen",
         transport="vllm_27b",
+        thinks_unless_told=True,
         notes=(
             "unsloth/Qwen3.8-27B on vLLM 0.30.0, bf16, tensor parallel over "
             "both A40s. A second generation rather than a second family, so "
@@ -582,6 +618,7 @@ LADDER: tuple[ModelEntry, ...] = (
         tier="mid",
         family="qwen",
         transport="unsloth",
+        thinks_unless_told=True,
         notes=(
             "Served locally on two A40s, BF16, 262k context. The only model "
             "in this ladder whose endpoint enforces a schema as a grammar "

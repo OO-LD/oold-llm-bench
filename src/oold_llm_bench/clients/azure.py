@@ -183,6 +183,22 @@ class Credentials:
         return {name: bool(getattr(self, key, None)) for key, name in _ENV.items() if key != "api_version"}
 
 
+def thinking_disabled(entry: ModelEntry, reasoning: str | None) -> bool:
+    """Whether to send the switch that stops a model reasoning first.
+
+    Off by default for a deployment that thinks unless told otherwise. Left
+    on, it spends the whole completion budget reasoning and answers nothing,
+    and a grid that said nothing about reasoning would record empty cells
+    against a deployment answering every request in milliseconds.
+
+    A condition naming a level is obeyed, because asking for thinking is a
+    thing a study does on purpose rather than an oversight.
+    """
+    if reasoning == "off":
+        return True
+    return reasoning is None and entry.thinks_unless_told
+
+
 def _llm_for(
     entry: ModelEntry, credentials: Credentials, temperature: float | None, reasoning: str | None = None
 ) -> Any:
@@ -195,7 +211,13 @@ def _llm_for(
     # switch rides on the request rather than on the schema. Only the local
     # engines read it; a provider that does not simply ignores the field.
     thinking_off = {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
-    tuning_extra: dict[str, Any] = thinking_off if reasoning == "off" else {}
+    # Sent off by default for a model that thinks unless told otherwise. Left
+    # on, it spends the whole completion budget reasoning and answers nothing,
+    # and a grid that said nothing about reasoning would record empty cells
+    # against a deployment that is answering every request in milliseconds. A
+    # condition naming a level is obeyed, because asking for thinking is a
+    # thing a study does on purpose.
+    tuning_extra: dict[str, Any] = thinking_off if thinking_disabled(entry, reasoning) else {}
     # Omitted, not defaulted. A model that rejects the parameter fails the
     # call outright, so sending it anyway would lose every cell for that model.
     tuning: dict[str, Any] = (
