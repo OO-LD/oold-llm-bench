@@ -142,6 +142,7 @@ def test_every_dimension_is_reported_separately():
         "property",
         "property_near",
         "value",
+        "value_near_property",
         "value_near",
         "unit",
         "unit_physical",

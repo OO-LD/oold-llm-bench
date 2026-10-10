@@ -1651,9 +1651,9 @@ class TestWhatCopyingThePageIsWorth:
         ("labelling", "n_slots", "notation", "mean", "perfect"),
         [
             (Labelling.NAMED, 4, Notation.CANONICAL, 0.9333, 88),
-            (Labelling.NAMED, 4, Notation.WRITTEN, 0.7458, 10),
+            (Labelling.NAMED, 4, Notation.WRITTEN, 0.8313, 39),
             (Labelling.IMPLIED, 3, Notation.CANONICAL, 0.9056, 86),
-            (Labelling.IMPLIED, 3, Notation.WRITTEN, 0.6500, 1),
+            (Labelling.IMPLIED, 3, Notation.WRITTEN, 0.7694, 37),
         ],
     )
     def test_transcription_stops_being_enough(self, labelling, n_slots, notation, mean, perfect):
@@ -1667,9 +1667,11 @@ class TestWhatCopyingThePageIsWorth:
         An enumeration member is copied correctly because nothing respells it,
         which is the out-of-scope decision showing up as a number. An integer
         and a number are copied correctly although they are respelled, because
-        the grader strips digit separators before comparing. A duration is
-        copied correctly because the grader reads both notations as the
-        interval they state, so "90 minutes" and ``PT1H30M`` are one answer.
+        the grader strips digit separators before comparing. A duration and a
+        date are copied correctly because the grader reads both notations as
+        the interval or the calendar date they state, so "90 minutes" and
+        ``PT1H30M`` are one answer, as are "3 November 1898" and
+        ``1898-11-03``.
 
         The rest of the respelled kinds are normalisation the score depends
         on; these are surface variation and nothing more.
@@ -1687,7 +1689,7 @@ class TestWhatCopyingThePageIsWorth:
             for slot, value in _answered(task.expected[0], task.variant):
                 if same_value(value, written_value(slot.kind, value)):
                     passes.add(slot.kind)
-        assert passes == {Kind.TEXT, Kind.EMAIL, Kind.ENUM, Kind.INTEGER, Kind.NUMBER, Kind.DURATION}
+        assert passes == {Kind.TEXT, Kind.EMAIL, Kind.ENUM, Kind.INTEGER, Kind.NUMBER, Kind.DURATION, Kind.DATE}
 
 
 def _linked(seed, n_entities=2, classes=None, **overrides):

@@ -406,7 +406,7 @@ class TestACorpusTask:
         assert "1.000" in reported
 
     def test_the_near_dimensions_are_shown_beside_the_strict_ones(self, ready, page):
-        """`class_near`, `value_near` and `property_near` widen a strict
+        """`class_near`, `value_near_property` and `property_near` widen a strict
         dimension with a vocabulary- or lineage-aware reading of a hit; the
         score panel's fixed row order used to name only the three they widen."""
         if LIVE:
@@ -415,7 +415,7 @@ class TestACorpusTask:
         _submit_and_settle(page, ready)
         _open_tab(page, "Score")
         table = page.locator(".pg-score .pg-table").first.inner_text()
-        for dimension in ("value_near", "class_near", "property_near"):
+        for dimension in ("value_near_property", "class_near", "property_near"):
             assert dimension in table, f"{dimension} is missing from the score panel: {table}"
 
     def test_the_cost_panel_separates_the_plan_call_from_the_fill_calls(self, ready, page):

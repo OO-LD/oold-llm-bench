@@ -218,7 +218,7 @@ def _value_score(
     modes: dict[str, MatchMode],
     unit_match: UnitMatch = UnitMatch.EXACT,
     vocabulary: PropertyHierarchy | None = None,
-) -> tuple[Score, Score, Score, Score, Score]:
+) -> tuple[Score, Score, Score, Score, Score, Score]:
     """Value, property, unit, and their vocabulary-aware counterparts, for one
     aligned pair.
 
@@ -239,10 +239,12 @@ def _value_score(
         by_property.setdefault(triple.prop, []).append(triple.value)
 
     value = Score()
+    value_near_property = Score()
     value_near = Score()
     unit = Score()
     matched_values: set[tuple[str, int]] = set()
     matched_near: set[tuple[str, int]] = set()
+    matched_contained: set[tuple[str, int]] = set()
 
     for triple in sorted(wanted, key=lambda t: (t.prop, str(t.value))):
         candidates = by_property.get(triple.prop, [])
@@ -256,21 +258,28 @@ def _value_score(
             ),
             None,
         )
+        optional = triple.prop in optional_properties
         if hit is not None:
             matched_values.add((triple.prop, id(hit)))
-            value = value + Score(true_positives=1)
-        elif triple.prop not in optional_properties:
-            value = value + Score(false_negatives=1)
+        value = value + _verdict(hit, optional)
+
+        # The same slot, read for the same thing said in more words. Under the
+        # expected property name and never across names: filing a value under
+        # another name is what `value_near_property` answers, and one lenient
+        # reading standing for both would say which of the two an arm did.
+        contained = hit
+        if contained is None:
+            contained = _contained_candidate(triple, candidates, matched_values, matched_contained)
+            if contained is not None:
+                matched_contained.add((triple.prop, id(contained)))
+        value_near = value_near + _verdict(contained, optional)
 
         near_hit = (triple.prop, hit) if hit is not None else None
         if near_hit is None and vocabulary is not None:
             near_hit = _near_candidate(triple, by_property, vocabulary, matched_values, matched_near, mode, unit_match)
             if near_hit is not None:
                 matched_near.add((near_hit[0], id(near_hit[1])))
-        if near_hit is not None:
-            value_near = value_near + Score(true_positives=1)
-        elif triple.prop not in optional_properties:
-            value_near = value_near + Score(false_negatives=1)
+        value_near_property = value_near_property + _verdict(near_hit, optional)
 
         # The unit is judged on its own candidate, found by physical equality.
         # Pinning it to the value match would erase unit failures under exact
@@ -280,10 +289,59 @@ def _value_score(
     # Anything produced that answered nothing is a false positive. An arm that
     # empties the schema into every entity should not score well for it.
     value = value + Score(false_positives=max(len(produced) - len(matched_values), 0))
-    value_near = value_near + Score(false_positives=max(len(produced) - len(matched_values) - len(matched_near), 0))
+    value_near_property = value_near_property + Score(
+        false_positives=max(len(produced) - len(matched_values) - len(matched_near), 0)
+    )
+    value_near = value_near + Score(
+        false_positives=max(len(produced) - len(matched_values) - len(matched_contained), 0)
+    )
 
     prop, prop_near = _property_scores({t.prop for t in wanted}, set(by_property), vocabulary)
-    return value, prop, unit, value_near, prop_near
+    return value, prop, unit, value_near_property, prop_near, value_near
+
+
+def _verdict(found: object | None, optional: bool) -> Score:
+    """One dimension's contribution for one wanted triple.
+
+    An optional property contributes nothing when it is absent, which is what
+    makes it optional: it is scored where the answer states it and not counted
+    as a miss where the answer leaves it out.
+    """
+    if found is not None:
+        return Score(true_positives=1)
+    return Score() if optional else Score(false_negatives=1)
+
+
+def _contained_candidate(
+    triple: Triple,
+    candidates: list[Scalar],
+    matched_values: set[tuple[str, int]],
+    matched_contained: set[tuple[str, int]],
+) -> Scalar | None:
+    """A produced value holding the expected one, under the same property.
+
+    The fuller designation of the same thing: "Orange Group" where the corpus
+    files "Orange". Only where the expected value is distinctive enough to be
+    worth finding inside another, so a short name is not credited on a
+    coincidence, and only for text, since a contained number is a different
+    number.
+    """
+    from oold_llm_bench.dedup import informative
+
+    wanted = triple.value
+    if not isinstance(wanted, str) or not informative(wanted):
+        return None
+    return next(
+        (
+            candidate
+            for candidate in candidates
+            if (triple.prop, id(candidate)) not in matched_values
+            and (triple.prop, id(candidate)) not in matched_contained
+            and isinstance(candidate, str)
+            and same_value(wanted, candidate, MatchMode.CONTAINS)
+        ),
+        None,
+    )
 
 
 def _unit_verdict(triple: Triple, hit: Scalar | None, candidates: list[Scalar], unit_match: UnitMatch) -> Score:
@@ -331,6 +389,7 @@ class _InstanceScores:
     class_score: Score
     class_near: Score
     value: Score
+    value_near_property: Score
     value_near: Score
     prop: Score
     prop_near: Score
@@ -366,6 +425,7 @@ def _score_instance(
             class_score=Score(false_negatives=1),
             class_near=Score(false_negatives=1),
             value=Score(false_negatives=len(wanted)),
+            value_near_property=Score(false_negatives=len(wanted)),
             value_near=Score(false_negatives=len(wanted)),
             prop=Score(false_negatives=properties),
             prop_near=Score(false_negatives=properties),
@@ -377,15 +437,16 @@ def _score_instance(
 
     produced_class = produced.classes.get(produced_key)
     hit, near_hit = _class_hit(instance, produced_class, subclasses, lineage)
-    pair_value, pair_prop, pair_unit, pair_value_near, pair_prop_near = _value_score(
+    pair_value, pair_prop, pair_unit, pair_value_near_property, pair_prop_near, pair_value_near = _value_score(
         instance, by_entity[produced_key], modes, unit_match, vocabulary
     )
-    _, _, pair_physical, _, _ = _value_score(instance, by_entity[produced_key], modes, UnitMatch.PHYSICAL)
+    _, _, pair_physical, _, _, _ = _value_score(instance, by_entity[produced_key], modes, UnitMatch.PHYSICAL)
     return _InstanceScores(
         entity=Score(true_positives=1),
         class_score=Score(true_positives=1) if hit else Score(false_negatives=1),
         class_near=Score(true_positives=1) if near_hit else Score(false_negatives=1),
         value=pair_value,
+        value_near_property=pair_value_near_property,
         value_near=pair_value_near,
         prop=pair_prop,
         prop_near=pair_prop_near,
@@ -409,7 +470,7 @@ def score_task(
     """Score one arm's output for one task.
 
     ``vocabulary`` defaults to the built property hierarchy and is accepted
-    explicitly for tests. Where it holds edges, :attr:`Dimension.VALUE_NEAR`
+    explicitly for tests. Where it holds edges, :attr:`Dimension.VALUE_NEAR_PROPERTY`
     and :attr:`Dimension.PROPERTY_NEAR` are reported beside the strict two: a
     value correctly read but filed under a name the vocabulary calls broader
     or narrower than the one expected is recovered there rather than charged
@@ -459,6 +520,7 @@ def score_task(
     class_score = Score()
     class_near = Score()
     value = Score()
+    value_near_property = Score()
     value_near = Score()
     prop = Score()
     prop_near = Score()
@@ -478,6 +540,7 @@ def score_task(
         class_score = class_score + scored.class_score
         class_near = class_near + scored.class_near
         value = value + scored.value
+        value_near_property = value_near_property + scored.value_near_property
         value_near = value_near + scored.value_near
         prop = prop + scored.prop
         prop_near = prop_near + scored.prop_near
@@ -490,6 +553,7 @@ def score_task(
     entity = entity + Score(false_positives=len(alignment.unmatched_produced))
     for key in alignment.unmatched_produced:
         value = value + Score(false_positives=len(by_entity[key]))
+        value_near_property = value_near_property + Score(false_positives=len(by_entity[key]))
         value_near = value_near + Score(false_positives=len(by_entity[key]))
 
     result.dimensions = {
@@ -497,13 +561,14 @@ def score_task(
         Dimension.GROUNDED: _grounded_score(task, by_entity),
         Dimension.CLASS: class_score,
         Dimension.VALUE: value,
+        Dimension.VALUE_NEAR: value_near,
         Dimension.PROPERTY: prop,
         Dimension.UNIT: unit,
         Dimension.UNIT_PHYSICAL: unit_physical,
         Dimension.PROVENANCE: provenance,
     }
     if hierarchy.parents:
-        result.dimensions[Dimension.VALUE_NEAR] = value_near
+        result.dimensions[Dimension.VALUE_NEAR_PROPERTY] = value_near_property
         result.dimensions[Dimension.PROPERTY_NEAR] = prop_near
     if lineage.parents:
         result.dimensions[Dimension.CLASS_NEAR] = class_near

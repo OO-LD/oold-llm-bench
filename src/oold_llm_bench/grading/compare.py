@@ -408,6 +408,71 @@ def _as_duration(value: Scalar) -> float | None:
     return total
 
 
+_MONTHS = {
+    name: number
+    for number, names in enumerate(
+        (
+            ("january", "jan"),
+            ("february", "feb"),
+            ("march", "mar"),
+            ("april", "apr"),
+            ("may",),
+            ("june", "jun"),
+            ("july", "jul"),
+            ("august", "aug"),
+            ("september", "sep", "sept"),
+            ("october", "oct"),
+            ("november", "nov"),
+            ("december", "dec"),
+        ),
+        start=1,
+    )
+    for name in names
+}
+
+_ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$")
+_DAY_FIRST = re.compile(r"(?i)^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+),?\s+(\d{4})$")
+_MONTH_FIRST = re.compile(r"(?i)^([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$")
+
+
+def _as_date(value: Scalar) -> tuple[int, int, int] | None:
+    """One calendar date as year, month, day, written either way.
+
+    The corpus files a date as ISO 8601 and the document writes it for a
+    reader: "3 November 1898" against ``1898-11-03``. Measured over the
+    Wikidata leads, a date in the wrong notation is half of every wrong value
+    the chain produces, and none of those answers was wrong about the date.
+
+    ``None`` for anything that is not a full date, which includes a year on
+    its own. "1901" against ``1901-01-28`` is a less precise answer and not
+    another spelling of the same one, so it stays a miss.
+
+    No slash form. ``03/11/1898`` is the third of November or the eleventh of
+    March depending on where it was written, and a grader that picks one is
+    deciding a question the document did not answer.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    iso = _ISO_DATE.match(text)
+    if iso:
+        return (int(iso.group(1)), int(iso.group(2)), int(iso.group(3)))
+    for pattern, order in ((_DAY_FIRST, "dmy"), (_MONTH_FIRST, "mdy")):
+        written = pattern.match(text)
+        if not written:
+            continue
+        day, month_name, year = (
+            (written.group(1), written.group(2), written.group(3))
+            if order == "dmy"
+            else (written.group(2), written.group(1), written.group(3))
+        )
+        month = _MONTHS.get(month_name.casefold())
+        if month is None:
+            return None
+        return (int(year), month, int(day))
+    return None
+
+
 def same_value(
     expected: Scalar,
     produced: Scalar,
@@ -436,6 +501,11 @@ def same_value(
     produced_span = _as_duration(produced)
     if expected_span is not None and produced_span is not None:
         return expected_span == produced_span
+
+    expected_date = _as_date(expected)
+    produced_date = _as_date(produced)
+    if expected_date is not None and produced_date is not None:
+        return expected_date == produced_date
 
     left = normalise_text(expected)
     right = normalise_text(produced)

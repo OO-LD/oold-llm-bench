@@ -6,7 +6,7 @@ score a wrong answer as a pass. Those are marked in their docstrings.
 
 import pytest
 
-from oold_llm_bench.grading import Quantity, TripleSet, make_triples
+from oold_llm_bench.grading import Dimension, Quantity, TripleSet, make_triples
 from oold_llm_bench.grading.align import align, duplicates, overlap
 from oold_llm_bench.grading.compare import (
     MatchMode,
@@ -506,7 +506,7 @@ class TestScore:
 class TestVocabularyAwareValueAndProperty:
     """A value correctly read but filed under a defensible synonym should not
     be charged a miss on the value and an invention on the name, for one
-    answer. See `PropertyHierarchy` and `Dimension.VALUE_NEAR` /
+    answer. See `PropertyHierarchy` and `Dimension.VALUE_NEAR_PROPERTY` /
     `Dimension.PROPERTY_NEAR`."""
 
     def _hierarchy(self):
@@ -537,7 +537,7 @@ class TestVocabularyAwareValueAndProperty:
             produced({"a": {"creator": "Jane Doe"}}, classes={"a": "schemaorg.Person"}),
             vocabulary=self._hierarchy(),
         )
-        assert result.dimensions[Dimension.VALUE_NEAR].f1 == pytest.approx(1.0)
+        assert result.dimensions[Dimension.VALUE_NEAR_PROPERTY].f1 == pytest.approx(1.0)
         assert result.dimensions[Dimension.PROPERTY_NEAR].f1 == pytest.approx(1.0)
 
     def test_an_unrelated_name_recovers_nothing(self):
@@ -549,7 +549,7 @@ class TestVocabularyAwareValueAndProperty:
             produced({"a": {"award": "Jane Doe"}}, classes={"a": "schemaorg.Person"}),
             vocabulary=self._hierarchy(),
         )
-        assert result.dimensions[Dimension.VALUE_NEAR].f1 == 0.0
+        assert result.dimensions[Dimension.VALUE_NEAR_PROPERTY].f1 == 0.0
         assert result.dimensions[Dimension.PROPERTY_NEAR].f1 == 0.0
 
     def test_a_broader_name_with_the_wrong_value_is_not_forgiven(self):
@@ -562,7 +562,7 @@ class TestVocabularyAwareValueAndProperty:
             produced({"a": {"creator": "banana"}}, classes={"a": "schemaorg.Person"}),
             vocabulary=self._hierarchy(),
         )
-        assert result.dimensions[Dimension.VALUE_NEAR].f1 == 0.0
+        assert result.dimensions[Dimension.VALUE_NEAR_PROPERTY].f1 == 0.0
 
     def test_no_hierarchy_reports_neither_near_dimension(self):
         """An explicit empty hierarchy, not the omitted default: the default
@@ -576,7 +576,7 @@ class TestVocabularyAwareValueAndProperty:
             produced({"a": {"name": "Jane"}}),
             vocabulary=PropertyHierarchy(parents={}),
         )
-        assert Dimension.VALUE_NEAR not in result.dimensions
+        assert Dimension.VALUE_NEAR_PROPERTY not in result.dimensions
         assert Dimension.PROPERTY_NEAR not in result.dimensions
 
 
@@ -901,3 +901,80 @@ class TestADurationIsComparedAsAnInterval:
 
         assert same_value("Breakfast", "Breakfast")
         assert not same_value("Breakfast", "Dinner")
+
+
+class TestAValueNamedInMoreWords:
+    """A corpus files a short designation and a document gives the full one.
+
+    Wikidata records the founder as "Orange" where the lead says "Orange
+    Group", and as "Christian Albert" where the lead says "Christian Albert,
+    Duke of Holstein-Gottorp". Strict scoring calls both wrong and reports an
+    answer that read the document correctly as having invented a value.
+    """
+
+    def _scored(self, expected_fields, produced_fields):
+        record = task(ExpectedInstance(key="e1", class_path="Organization", fields=expected_fields))
+        produced = TripleSet(triples=make_triples("e1", produced_fields), classes={"e1": "Organization"}, provenance={})
+        return score_task(record, produced).dimensions
+
+    def test_the_fuller_designation_is_recovered(self):
+        dims = self._scored(
+            {"name": "Orange", "founder": "Christian Albert"},
+            {"name": "Orange Group", "founder": "Christian Albert, Duke of Holstein-Gottorp"},
+        )
+        assert dims[Dimension.VALUE].f1 == 0.0
+        assert dims[Dimension.VALUE_NEAR].f1 == 1.0
+
+    def test_another_entity_is_still_wrong(self):
+        dims = self._scored({"name": "Fashoda Incident"}, {"name": "Europe"})
+        assert dims[Dimension.VALUE_NEAR].f1 == 0.0
+
+    def test_a_designation_too_short_to_find_inside_another_is_not_credited(self):
+        """ "Acme" is a substring of a great many strings, so containment there
+        would be a coincidence rather than the same thing named in full."""
+        dims = self._scored({"name": "Acme"}, {"name": "Acme Holdings International"})
+        assert dims[Dimension.VALUE_NEAR].f1 == 0.0
+
+    def test_it_is_never_smaller_than_the_strict_reading(self):
+        dims = self._scored({"name": "Orange Group"}, {"name": "Orange Group"})
+        assert dims[Dimension.VALUE].f1 == 1.0
+        assert dims[Dimension.VALUE_NEAR].f1 == 1.0
+
+    def test_the_reverse_containment_is_not_credited(self):
+        """A fragment of the right name is not the right name in more words."""
+        dims = self._scored({"name": "Christian Albert, Duke of Holstein-Gottorp"}, {"name": "Christian Albert"})
+        assert dims[Dimension.VALUE_NEAR].f1 == 0.0
+
+
+class TestADateIsComparedAsACalendarDate:
+    """The corpus files a date as ISO 8601 and the document writes it out.
+
+    Measured over the Wikidata leads, a date in the wrong notation is half of
+    every wrong value the chain produces, and none of those answers was wrong
+    about the date.
+    """
+
+    def test_the_two_notations_for_one_date_agree(self):
+        from oold_llm_bench.grading.compare import same_value
+
+        assert same_value("1898-11-03", "3 November 1898")
+        assert same_value("1898-11-03", "November 3, 1898")
+        assert same_value("1898-11-03", "3rd November 1898")
+
+    def test_a_different_date_still_fails(self):
+        from oold_llm_bench.grading.compare import same_value
+
+        assert not same_value("2016-04-14", "2016-04-22")
+        assert not same_value("1898-11-03", "3 November 1899")
+
+    def test_a_year_alone_is_less_precise_and_not_another_spelling(self):
+        from oold_llm_bench.grading.compare import same_value
+
+        assert not same_value("1901-01-28", "1901")
+
+    def test_a_slash_form_is_refused_rather_than_guessed(self):
+        """03/11/1898 is November or March depending on where it was written,
+        and a grader that picks one decides what the document did not."""
+        from oold_llm_bench.grading.compare import _as_date
+
+        assert _as_date("03/11/1898") is None

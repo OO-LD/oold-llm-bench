@@ -1101,7 +1101,7 @@ class TestReadOuts:
         """A value read correctly but filed under a vocabulary-adjacent name,
         or a class answered one step from the expected one, is a different
         finding from a miss, and the score panel used to drop it:
-        `score_task` reports it under `value_near`/`property_near`/
+        `score_task` reports it under `value_near_property`/`property_near`/
         `class_near`, and the fixed `order` list named only the strict three.
         """
         from oold_llm_bench.grading.score import score_task
@@ -1139,7 +1139,7 @@ class TestReadOuts:
             )
         )
         value_rows = {row["dimension"]: row for row in value_result}
-        assert value_rows["value_near"]["f1"] == pytest.approx(1.0)
+        assert value_rows["value_near_property"]["f1"] == pytest.approx(1.0)
         assert value_rows["property_near"]["f1"] == pytest.approx(1.0)
         assert value_rows["value"]["f1"] == 0.0
 
@@ -1157,7 +1157,7 @@ class TestReadOuts:
 
         value_names = [row["dimension"] for row in value_result]
         class_names = [row["dimension"] for row in class_result]
-        assert value_names.index("value_near") == value_names.index("value") + 1
+        assert value_names.index("value_near_property") == value_names.index("value") + 1
         assert value_names.index("property_near") == value_names.index("property") + 1
         assert class_names.index("class_near") == class_names.index("class") + 1
 

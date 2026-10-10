@@ -8,7 +8,7 @@ calling a model again. No network, no API cost.
 
 Five buckets per missed value, in the order they are tried:
 
-    right value, wrong slot name            -- VALUE_NEAR recovers it
+    right value, wrong slot name            -- VALUE_NEAR_PROPERTY recovers it
     right value, forgivable wrong class     -- CLASS_NEAR recovers it
     value simply missing (recall)           -- the step never answered it
     value invented (precision)              -- produced, not expected
@@ -57,17 +57,17 @@ def _tally(scored, bucket: collections.Counter[str]) -> list[tuple[str, str | No
     """Add one cell's faults to its model's bucket, return its class errors."""
     dims = scored.dimensions
     value_strict = dims["value"]
-    value_near = dims.get("value_near", value_strict)
+    value_near_property = dims.get("value_near_property", value_strict)
     prop_near = dims.get("property_near")
     class_near = dims.get("class_near")
 
-    # A miss that VALUE_NEAR recovers named the value under a defensible
+    # A miss that VALUE_NEAR_PROPERTY recovers named the value under a defensible
     # synonym; the rest is the property grader's own business and is read
     # off PROPERTY_NEAR, not duplicated here.
-    bucket["right value, wrong slot name (VALUE_NEAR recovers it)"] += (
-        value_near.true_positives - value_strict.true_positives
+    bucket["right value, wrong slot name (VALUE_NEAR_PROPERTY recovers it)"] += (
+        value_near_property.true_positives - value_strict.true_positives
     )
-    bucket["value simply missing (recall)"] += value_near.false_negatives
+    bucket["value simply missing (recall)"] += value_near_property.false_negatives
     bucket["value invented (precision)"] += value_strict.false_positives
     if prop_near is not None:
         bucket["slot named under a forgivable synonym (PROPERTY_NEAR)"] += (

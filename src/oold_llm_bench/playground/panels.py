@@ -51,7 +51,7 @@ def score_rows(score: TaskScore) -> list[dict[str, Any]]:
     """
     order = [
         "value",
-        "value_near",
+        "value_near_property",
         "entity",
         "class",
         "class_near",

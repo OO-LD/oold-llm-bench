@@ -60,7 +60,7 @@ class Dimension(str, Enum):
     Absent when no hierarchy is available, because then it is :attr:`PROPERTY`
     under another name."""
     VALUE = "value"
-    VALUE_NEAR = "value_near"
+    VALUE_NEAR_PROPERTY = "value_near_property"
     """:attr:`VALUE` where a value the document states was found, but filed
     under a name the vocabulary calls broader or narrower than the one the
     task expects.
@@ -72,6 +72,27 @@ class Dimension(str, Enum):
     :attr:`PROPERTY`. One answer, two dimensions, two counted errors.
 
     Absent when no hierarchy is available."""
+    VALUE_NEAR = "value_near"
+    """:attr:`VALUE` where the answer names the same thing in more words.
+
+    A document gives an entity its full designation and a corpus files it
+    under a short one: Wikidata records the founder as "Orange" where the lead
+    says "Orange Group", and as "Christian Albert" where the lead says
+    "Christian Albert, Duke of Holstein-Gottorp". Strict scoring calls both
+    wrong, and an answer that read the document correctly is reported as
+    having invented a value.
+
+    Containment and in one direction only: the expected value has to appear in
+    the produced one. The reverse would credit an answer that gave a fragment
+    of the right name, which is a different thing from giving the fuller form.
+
+    Only where the expected value is distinctive enough to be worth finding
+    inside another, by :func:`~oold_llm_bench.dedup.informative`. "Orange" is
+    a substring of a great many strings, so a short designation is left to
+    strict scoring rather than credited on a coincidence.
+
+    Never smaller than :attr:`VALUE`, which it widens: every strict match is
+    also a containment."""
     UNIT = "unit"
     """Conformance: the unit is spelled as the corpus spells it."""
     UNIT_PHYSICAL = "unit_physical"
