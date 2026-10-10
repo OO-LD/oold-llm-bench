@@ -978,3 +978,36 @@ class TestADateIsComparedAsACalendarDate:
         from oold_llm_bench.grading.compare import _as_date
 
         assert _as_date("03/11/1898") is None
+
+
+class TestGroundednessSkipsACanonicalForm:
+    """A canonical value is not in the document and is not an invention.
+
+    The schema requires the written form of a date and a duration, and a page
+    writes "3 November 1898" rather than `1898-11-03`. Counting the canonical
+    answer as ungrounded reports an arm as inventing a value precisely because
+    it obeyed the schema.
+    """
+
+    def _grounded(self, document, fields):
+        record = TaskRecord(
+            id="t1",
+            document=document,
+            corpus=corpus(),
+            split=Split.DEV,
+            expected=[ExpectedInstance(key="e1", class_path="Event", fields=fields)],
+        )
+        produced = TripleSet(triples=make_triples("e1", fields), classes={"e1": "Event"}, provenance={})
+        return score_task(record, produced).dimensions[Dimension.GROUNDED]
+
+    def test_a_canonical_date_is_not_counted_against_the_answer(self):
+        grounded = self._grounded("The incident ran from 3 November 1898.", {"startDate": "1898-11-03"})
+        assert grounded.false_positives == 0
+
+    def test_a_canonical_duration_is_not_counted_against_the_answer(self):
+        grounded = self._grounded("Ready in 5 minutes.", {"cookTime": "PT5M"})
+        assert grounded.false_positives == 0
+
+    def test_a_text_value_the_document_never_states_still_counts(self):
+        grounded = self._grounded("The incident ran from 3 November 1898.", {"name": "Boxer Rebellion"})
+        assert grounded.false_positives == 1

@@ -21,6 +21,8 @@ from oold_llm_bench.grading.align import Alignment, align, duplicates
 from oold_llm_bench.grading.compare import (
     MatchMode,
     UnitMatch,
+    _as_date,
+    _as_duration,
     same_number,
     same_quantity,
     same_unit,
@@ -620,6 +622,13 @@ def _grounded_score(task: TaskRecord, by_entity: dict[str, frozenset[Triple]]) -
     is expected in a canonical form the document need not spell, so counting
     those would report the corpus's own normalisation as invention. See
     :attr:`~oold_llm_bench.grading.triples.Dimension.GROUNDED`.
+
+    A date and a duration are skipped by parsing them and not by their Python
+    type, which is the whole of the exclusion the paragraph above describes:
+    ``1898-11-03`` and ``PT5M`` are strings, and a document that writes "3
+    November 1898" holds neither of them verbatim. Left in, a slot whose
+    written form the schema requires is counted as an invention precisely
+    because the answer obeyed the schema.
     """
     document = (task.document or "").casefold()
     if not document:
@@ -629,6 +638,8 @@ def _grounded_score(task: TaskRecord, by_entity: dict[str, frozenset[Triple]]) -
         for triple in triples:
             value = triple.value
             if not isinstance(value, str) or not value.strip():
+                continue
+            if _as_date(value) is not None or _as_duration(value) is not None:
                 continue
             if value.casefold().strip() in document:
                 score = score + Score(true_positives=1)

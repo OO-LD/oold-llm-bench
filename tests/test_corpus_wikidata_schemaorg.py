@@ -740,14 +740,16 @@ class TestTheSeamCloses:
         empty = TripleSet(triples=frozenset(), classes={}, provenance={})
         assert score_task(tasks[0], empty).primary == 0.0
 
-    def test_a_perfect_answer_grounds_every_text_value_and_no_date(self, tasks):
+    def test_a_perfect_answer_grounds_every_text_value_and_counts_no_date(self, tasks):
         """A text answer is a string the lead contains, which is what makes
         this corpus different from one whose answers are canonical forms.
 
-        A date is the exception and it is by construction: the answer is
-        ``1974-06-20`` and the lead writes "20 June 1974". The grounded
-        dimension is a rate and not a score for exactly this reason, and this
-        is the rate on this corpus.
+        A date counts neither way. The answer is ``1974-06-20`` and the lead
+        writes "20 June 1974", so it is absent from the document by
+        construction and present in the answer because the schema requires
+        that form. Counting it as ungrounded would report the corpus's own
+        normalisation as an invention, which is what the dimension exists to
+        detect.
         """
         kinds = {slot[0]: slot[1] for entry in CATALOGUE.values() for slot in entry["slots"]}
         for task in tasks:
@@ -758,7 +760,7 @@ class TestTheSeamCloses:
             }
             grounded = score_task(task, perfect_answer(task)).dimensions[Dimension.GROUNDED]
             assert grounded.true_positives == counted["text"]
-            assert grounded.false_positives == counted["date"]
+            assert grounded.false_positives == 0
 
     def test_every_negative_control_stays_at_its_floor(self, tasks):
         """All four measure 0.00, the wrong-document control included.
