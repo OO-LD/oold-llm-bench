@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.4.2 (2026-10-10)
+
+### Bug Fixes
+
+- **playground**: Draw only from classes deep enough for the draw
+  ([`c2e6df8`](https://github.com/OO-LD/oold-llm-bench/commit/c2e6df8ff6e5176eb6d4c66cc0191c48d930e722))
+
+### Chores
+
+- Pin the agent to the kept name slot and multi-value prompt
+  ([`ac94081`](https://github.com/OO-LD/oold-llm-bench/commit/ac94081fc14b6091431565c6cd65f3251dc5a6bf))
+
+
 ## v0.4.1 (2026-10-10)
 
 ### Bug Fixes

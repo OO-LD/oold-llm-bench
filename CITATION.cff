@@ -11,4 +11,4 @@ repository-code: https://github.com/OO-LD/oold-llm-bench
 # Managed by python-semantic-release (version_variables in pyproject.toml).
 # Do not edit by hand; it is bumped automatically on merge to main, and is
 # what Zenodo shows as the version of each archived release.
-version: 0.4.1
+version: 0.4.2
