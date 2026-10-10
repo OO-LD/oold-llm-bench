@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.3.1 (2026-10-10)
+
+### Bug Fixes
+
+- **grading**: Compare a duration as the interval it states
+  ([`13f3fe8`](https://github.com/OO-LD/oold-llm-bench/commit/13f3fe81eceb55ce35b5d95db1e601de887aa50b))
+
+
 ## v0.3.0 (2026-10-10)
 
 ### Features
