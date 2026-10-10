@@ -34,8 +34,44 @@ class Dimension(str, Enum):
     the three. A document holding several entities cannot be diagnosed from
     one number."""
     CLASS = "class"
+    CLASS_NEAR = "class_near"
+    """:attr:`CLASS` with an ancestor or a descendant of the expected class
+    accepted. `Person` for an `Actor` is under-specified, not mistaken, the
+    same way a wide property name is under-specified rather than wrong, and
+    answering one should not cost as much as naming an unrelated class.
+
+    Read from the task's own `class_parents`, not from a vocabulary file:
+    the lineage a corpus declares is the one its catalogue draws from, and
+    that is the hierarchy an answer is being judged against.
+
+    Absent when the task carries no lineage, because then it is :attr:`CLASS`
+    under another name. Respects :attr:`ExpectedInstance.allow_subclass`: an
+    instance that declared class discrimination itself as the question is not
+    forgiven here either."""
     PROPERTY = "property"
+    PROPERTY_NEAR = "property_near"
+    """:attr:`PROPERTY` with a name the vocabulary calls broader or narrower
+    than the expected one accepted, paired one-to-one against the names that
+    would otherwise be misses so one wide name does not answer for two narrow
+    ones. See :attr:`FILLABLE_NEAR`, which forgives the same relation at the
+    step that names a slot before anything fills it; this is the same
+    forgiveness where the slot was filled.
+
+    Absent when no hierarchy is available, because then it is :attr:`PROPERTY`
+    under another name."""
     VALUE = "value"
+    VALUE_NEAR = "value_near"
+    """:attr:`VALUE` where a value the document states was found, but filed
+    under a name the vocabulary calls broader or narrower than the one the
+    task expects.
+
+    Needed beside :attr:`PROPERTY_NEAR` and not covered by it: the value
+    lookup is keyed on the expected property name, so a value correctly read
+    and filed under a defensible synonym had no candidate to be found under
+    at all, charging a miss on the value together with the invention on
+    :attr:`PROPERTY`. One answer, two dimensions, two counted errors.
+
+    Absent when no hierarchy is available."""
     UNIT = "unit"
     """Conformance: the unit is spelled as the corpus spells it."""
     UNIT_PHYSICAL = "unit_physical"
@@ -83,6 +119,19 @@ class Dimension(str, Enum):
     a step can name the right slots and the next one still get the values
     wrong, and naming slots the document never fills makes the extract schema
     demand values that are not there."""
+    FILLABLE_NEAR = "fillable_near"
+    """:attr:`FILLABLE` with a name the vocabulary calls broader or narrower
+    than the expected one accepted.
+
+    Reported beside the strict count, never instead of it. A catalogue
+    offering `author` and `creator` together asks for a distinction the
+    sentence "written by Jane Doe" does not draw, and Wikidata records P50 as
+    a subproperty of P170, so answering the parent is a reading the vocabulary
+    licenses. The gap between the two numbers is the share of the precision
+    loss that belongs to the vocabulary rather than to the step.
+
+    Absent when no hierarchy is available, because then it is the strict
+    count under another name."""
     PATCH = "patch"
     """Whether a merge kept what was known, added what was new, and refused
     what contradicted.
@@ -193,7 +242,17 @@ class TripleSet(BaseModel):
     a prose arm this is the instrument's own error, reported next to the score."""
 
     def entities(self) -> frozenset[str]:
-        return frozenset(t.entity for t in self.triples)
+        """Every entity this answer asserts anything about.
+
+        Union of the three sources, not triples alone: an entity answered by
+        class with every property null produces no triple at all, and would
+        otherwise never become a candidate for alignment to match against.
+        `align.CLASS_AGREEMENT` exists precisely to let a right-class,
+        wrong-or-missing-values answer align rather than score as though
+        nothing were produced, and it cannot fire for an entity this method
+        never surfaces. A class pinned at decode time and then filled with
+        nothing is exactly the shape that exposed the gap."""
+        return frozenset(t.entity for t in self.triples) | frozenset(self.classes) | frozenset(self.provenance)
 
     def for_entity(self, key: str) -> frozenset[Triple]:
         return frozenset(t for t in self.triples if t.entity == key)

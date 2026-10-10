@@ -1,0 +1,297 @@
+{
+  "built_at": "2026-10-07T10:38:23+00:00",
+  "contested": [
+    [
+      "affiliation",
+      "memberOf"
+    ]
+  ],
+  "edges": [
+    {
+      "child": "actor",
+      "parent": "byArtist",
+      "via": [
+        "wikidata:P161 (cast member) -> P175 (performer)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "actor",
+      "parent": "contributor",
+      "via": [
+        "wikidata:P161 (cast member) -> P767 (contributor to the creative work or subject)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "affiliation",
+      "parent": "memberOf",
+      "via": [
+        "schemaorg:affiliation rdfs:subPropertyOf memberOf"
+      ],
+      "vocabularies": [
+        "schemaorg"
+      ]
+    },
+    {
+      "child": "alumniOf",
+      "parent": "affiliation",
+      "via": [
+        "wikidata:P69 (educated at) -> P1416 (affiliation)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "author",
+      "parent": "creator",
+      "via": [
+        "wikidata:P50 (author) -> P170 (creator)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "birthDate",
+      "parent": "startDate",
+      "via": [
+        "wikidata:P569 (date of birth) -> P571 (inception)",
+        "wikidata:P569 (date of birth) -> P580 (start time)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "byArtist",
+      "parent": "contributor",
+      "via": [
+        "wikidata:P175 (performer) -> P767 (contributor to the creative work or subject)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "deathDate",
+      "parent": "dissolutionDate",
+      "via": [
+        "wikidata:P570 (date of death) -> P576 (dissolved, abolished or demolished)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "deathDate",
+      "parent": "endDate",
+      "via": [
+        "wikidata:P570 (date of death) -> P582 (end time)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "director",
+      "parent": "contributor",
+      "via": [
+        "wikidata:P57 (director) -> P767 (contributor to the creative work or subject)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "director",
+      "parent": "creator",
+      "via": [
+        "wikidata:P57 (director) -> P170 (creator)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "dissolutionDate",
+      "parent": "endDate",
+      "via": [
+        "wikidata:P576 (dissolved, abolished or demolished) -> P582 (end time)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "familyName",
+      "parent": "name",
+      "via": [
+        "wikidata:P734 (family name) -> P2561 (name)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "faxNumber",
+      "parent": "telephone",
+      "via": [
+        "wikidata:P2900 (fax number) -> P1329 (phone number)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "founder",
+      "parent": "creator",
+      "via": [
+        "wikidata:P112 (founder) -> P170 (creator)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "foundingLocation",
+      "parent": "locationCreated",
+      "via": [
+        "wikidata:P740 (location of formation) -> P1071 (location of creation)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "givenName",
+      "parent": "name",
+      "via": [
+        "wikidata:P735 (given name) -> P2561 (name)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "illustrator",
+      "parent": "contributor",
+      "via": [
+        "wikidata:P110 (illustrator) -> P767 (contributor to the creative work or subject)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "illustrator",
+      "parent": "creator",
+      "via": [
+        "wikidata:P110 (illustrator) -> P170 (creator)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "material",
+      "parent": "hasPart",
+      "via": [
+        "wikidata:P186 (made from material) -> P527 (has part(s))"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "memberOf",
+      "parent": "affiliation",
+      "via": [
+        "wikidata:P463 (member of) -> P1416 (affiliation)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "numberOfEpisodes",
+      "parent": "numTracks",
+      "via": [
+        "wikidata:P1113 (number of episodes) -> P2635 (number of parts of this work)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "numberOfPages",
+      "parent": "numTracks",
+      "via": [
+        "wikidata:P1104 (number of pages) -> P2635 (number of parts of this work)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "numberOfSeasons",
+      "parent": "numTracks",
+      "via": [
+        "wikidata:P2437 (number of seasons) -> P2635 (number of parts of this work)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "subOrganization",
+      "parent": "hasPart",
+      "via": [
+        "wikidata:P355 (child organization or unit) -> P527 (has part(s))"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "subOrganization",
+      "parent": "owns",
+      "via": [
+        "wikidata:P355 (child organization or unit) -> P1830 (owner of)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "track",
+      "parent": "hasPart",
+      "via": [
+        "wikidata:P658 (tracklist) -> P527 (has part(s))"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    },
+    {
+      "child": "worksFor",
+      "parent": "affiliation",
+      "via": [
+        "wikidata:P108 (employer) -> P1416 (affiliation)"
+      ],
+      "vocabularies": [
+        "wikidata"
+      ]
+    }
+  ],
+  "schema_version": "1",
+  "sources": {
+    "schemaorg": "https://schema.org/version/latest/schemaorg-current-https.jsonld",
+    "wikidata": "P1647 over 86 properties the corpus maps from"
+  }
+}

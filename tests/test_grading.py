@@ -29,13 +29,14 @@ def corpus() -> CorpusRef:
     return CorpusRef(source=Source.SYNTHETIC, document_id="d1", content_hash="0" * 64)
 
 
-def task(*expected: ExpectedInstance) -> TaskRecord:
+def task(*expected: ExpectedInstance, class_parents: dict[str, list[str]] | None = None) -> TaskRecord:
     return TaskRecord(
         id="t1",
         document="Jane Doe works at Example Lab.",
         expected=list(expected),
         corpus=corpus(),
         split=Split.DEV,
+        class_parents=class_parents,
     )
 
 
@@ -355,6 +356,20 @@ class TestAlignment:
 
 
 class TestScore:
+    def test_the_right_class_with_every_field_null_still_credits_class(self):
+        """Found live: narrowing the union to the true class made an entity's
+        answer collapse to the class alone with every property null. With no
+        triple to carry it, the entity was invisible to alignment entirely,
+        and a class stated correctly scored as a miss on every dimension."""
+        from oold_llm_bench.grading import Dimension
+
+        result = score_task(
+            task(person("p1", name="Jane Doe")),
+            produced({}, classes={"a": "schemaorg.Person"}),
+        )
+        assert result.dimensions[Dimension.CLASS].f1 == pytest.approx(1.0)
+        assert result.dimensions[Dimension.VALUE].f1 == 0.0
+
     def test_f1_of_a_perfect_answer_is_one(self):
         result = score_task(
             task(person("p1", name="Jane Doe")),
@@ -486,6 +501,148 @@ class TestScore:
         described = result.describe()
         assert described["primary_f1"] == 1.0
         assert set(described["dimensions"]) >= {"value", "class", "entity"}
+
+
+class TestVocabularyAwareValueAndProperty:
+    """A value correctly read but filed under a defensible synonym should not
+    be charged a miss on the value and an invention on the name, for one
+    answer. See `PropertyHierarchy` and `Dimension.VALUE_NEAR` /
+    `Dimension.PROPERTY_NEAR`."""
+
+    def _hierarchy(self):
+        from oold_llm_bench.grading.vocabulary import PropertyHierarchy
+
+        return PropertyHierarchy(parents={"author": frozenset({"creator"}), "creator": frozenset()})
+
+    def test_strict_value_and_property_are_unmoved_by_the_hierarchy(self):
+        """The lenient dimensions exist beside the strict ones; a hierarchy
+        in play must never move what the strict ones already counted."""
+        from oold_llm_bench.grading import Dimension
+
+        instance = ExpectedInstance(key="p1", class_path="schemaorg.Person", fields={"author": "Jane Doe"})
+        result = score_task(
+            task(instance),
+            produced({"a": {"creator": "Jane Doe"}}, classes={"a": "schemaorg.Person"}),
+            vocabulary=self._hierarchy(),
+        )
+        assert result.dimensions[Dimension.VALUE].f1 == 0.0
+        assert result.dimensions[Dimension.PROPERTY].f1 == 0.0
+
+    def test_a_broader_name_recovers_the_value_and_the_property(self):
+        from oold_llm_bench.grading import Dimension
+
+        instance = ExpectedInstance(key="p1", class_path="schemaorg.Person", fields={"author": "Jane Doe"})
+        result = score_task(
+            task(instance),
+            produced({"a": {"creator": "Jane Doe"}}, classes={"a": "schemaorg.Person"}),
+            vocabulary=self._hierarchy(),
+        )
+        assert result.dimensions[Dimension.VALUE_NEAR].f1 == pytest.approx(1.0)
+        assert result.dimensions[Dimension.PROPERTY_NEAR].f1 == pytest.approx(1.0)
+
+    def test_an_unrelated_name_recovers_nothing(self):
+        from oold_llm_bench.grading import Dimension
+
+        instance = ExpectedInstance(key="p1", class_path="schemaorg.Person", fields={"author": "Jane Doe"})
+        result = score_task(
+            task(instance),
+            produced({"a": {"award": "Jane Doe"}}, classes={"a": "schemaorg.Person"}),
+            vocabulary=self._hierarchy(),
+        )
+        assert result.dimensions[Dimension.VALUE_NEAR].f1 == 0.0
+        assert result.dimensions[Dimension.PROPERTY_NEAR].f1 == 0.0
+
+    def test_a_broader_name_with_the_wrong_value_is_not_forgiven(self):
+        """The relation excuses the name, never the value underneath it."""
+        from oold_llm_bench.grading import Dimension
+
+        instance = ExpectedInstance(key="p1", class_path="schemaorg.Person", fields={"author": "Jane Doe"})
+        result = score_task(
+            task(instance),
+            produced({"a": {"creator": "banana"}}, classes={"a": "schemaorg.Person"}),
+            vocabulary=self._hierarchy(),
+        )
+        assert result.dimensions[Dimension.VALUE_NEAR].f1 == 0.0
+
+    def test_no_hierarchy_reports_neither_near_dimension(self):
+        """An explicit empty hierarchy, not the omitted default: the default
+        reads the real built file, which is populated and would make this
+        assertion pass for the wrong reason."""
+        from oold_llm_bench.grading import Dimension
+        from oold_llm_bench.grading.vocabulary import PropertyHierarchy
+
+        result = score_task(
+            task(person("p1", name="Jane")),
+            produced({"a": {"name": "Jane"}}),
+            vocabulary=PropertyHierarchy(parents={}),
+        )
+        assert Dimension.VALUE_NEAR not in result.dimensions
+        assert Dimension.PROPERTY_NEAR not in result.dimensions
+
+
+class TestClassLineage:
+    """Answering `Person` for an `Actor` is under-specified, not an invention.
+    Read from the task's own `class_parents`, never a property vocabulary."""
+
+    def _lineage(self):
+        return {"schemaorg.Actor": ["schemaorg.Person"]}
+
+    def test_strict_class_is_unmoved_by_the_lineage(self):
+        from oold_llm_bench.grading import Dimension
+
+        instance = ExpectedInstance(key="p1", class_path="schemaorg.Actor", fields={"name": "Jane"})
+        result = score_task(
+            task(instance, class_parents=self._lineage()),
+            produced({"a": {"name": "Jane"}}, classes={"a": "schemaorg.Person"}),
+        )
+        assert result.dimensions[Dimension.CLASS].f1 == 0.0
+
+    def test_the_ancestor_is_forgiven_under_class_near(self):
+        from oold_llm_bench.grading import Dimension
+
+        instance = ExpectedInstance(key="p1", class_path="schemaorg.Actor", fields={"name": "Jane"})
+        result = score_task(
+            task(instance, class_parents=self._lineage()),
+            produced({"a": {"name": "Jane"}}, classes={"a": "schemaorg.Person"}),
+        )
+        assert result.dimensions[Dimension.CLASS_NEAR].f1 == pytest.approx(1.0)
+
+    def test_an_unrelated_class_is_not_forgiven(self):
+        from oold_llm_bench.grading import Dimension
+
+        instance = ExpectedInstance(key="p1", class_path="schemaorg.Actor", fields={"name": "Jane"})
+        result = score_task(
+            task(instance, class_parents=self._lineage()),
+            produced({"a": {"name": "Jane"}}, classes={"a": "schemaorg.Organization"}),
+        )
+        assert result.dimensions[Dimension.CLASS_NEAR].f1 == 0.0
+
+    def test_a_descendant_is_forgiven_too(self):
+        """The same relation in the other direction: `Actor` for a `Person`."""
+        from oold_llm_bench.grading import Dimension
+
+        instance = ExpectedInstance(key="p1", class_path="schemaorg.Person", fields={"name": "Jane"})
+        result = score_task(
+            task(instance, class_parents=self._lineage()),
+            produced({"a": {"name": "Jane"}}, classes={"a": "schemaorg.Actor"}),
+        )
+        assert result.dimensions[Dimension.CLASS_NEAR].f1 == pytest.approx(1.0)
+
+    def test_an_instance_that_forbids_subclassing_is_not_forgiven_either(self):
+        from oold_llm_bench.grading import Dimension
+
+        strict = ExpectedInstance(key="p1", class_path="schemaorg.Actor", fields={"name": "Jane"}, allow_subclass=False)
+        result = score_task(
+            task(strict, class_parents=self._lineage()),
+            produced({"a": {"name": "Jane"}}, classes={"a": "schemaorg.Person"}),
+        )
+        assert result.dimensions[Dimension.CLASS_NEAR].f1 == 0.0
+
+    def test_no_lineage_reports_no_class_near_dimension(self):
+        from oold_llm_bench.grading import Dimension
+
+        result = score_task(task(person("p1", name="Jane")), produced({"a": {"name": "Jane"}}))
+        assert Dimension.CLASS_NEAR not in result.dimensions
 
 
 class TestMultiEntity:

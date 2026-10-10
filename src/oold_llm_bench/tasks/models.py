@@ -60,6 +60,28 @@ class CorpusRef(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str = ""
+    exhaustive: bool = True
+    """Whether everything the document states is recorded as expected.
+
+    True of a generated corpus, which wrote the document from the entities.
+    False of a harvested one, where it fails twice over.
+
+    For entities: a Wikipedia lead about a university names its founder, its
+    city and its parent organisation, and the corpus records the subject
+    alone. Measured, a step reaching an entity recall of 1.00 scored an entity
+    precision of 0.11 on those tasks.
+
+    For properties: the expected slots are the ones Wikidata happens to hold
+    for that item and whose value the lead also states, which is a subset of
+    what the lead states. Measured over 4,568 rejected property names, 76%
+    name a property Wikidata records nothing about for that entity, against
+    14% that are a vocabulary near miss and 10% that Wikidata holds but the
+    lead does not state. So fillable precision on this corpus is mostly a
+    reading of Wikidata's coverage.
+
+    One flag and not two, because no corpus has been met that records every
+    entity and only some properties. A report declines to headline a number
+    nobody can read rather than each report deciding for itself."""
     """Which corpus this document came from, as one word.
 
     Added 2026-10-04 because nothing carried it. The corpus was readable only

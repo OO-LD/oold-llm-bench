@@ -91,6 +91,17 @@ class TestTripleSet:
     def test_entities_are_derived_from_the_triples(self):
         assert self.build().entities() == frozenset({"e1"})
 
+    def test_an_entity_known_only_by_class_still_counts(self):
+        """A class pinned at decode time and then filled with nothing
+        produces no triple at all. Without this, align.CLASS_AGREEMENT could
+        never fire for it: the entity would not even be a candidate."""
+        empty = TripleSet(triples=frozenset(), classes={"e1": "schemaorg.Person"}, provenance={})
+        assert empty.entities() == frozenset({"e1"})
+
+    def test_an_entity_known_only_by_provenance_still_counts(self):
+        spanned = TripleSet(triples=frozenset(), classes={}, provenance={"e1": "line 3"})
+        assert spanned.entities() == frozenset({"e1"})
+
     def test_an_arm_may_assign_no_class(self):
         """A0 emits no class. That is the condition, not a malformed result."""
         assert self.build(classes={}).classes == {}
@@ -127,14 +138,18 @@ def test_every_dimension_is_reported_separately():
     assert [d.value for d in Dimension] == [
         "entity",
         "class",
+        "class_near",
         "property",
+        "property_near",
         "value",
+        "value_near",
         "unit",
         "unit_physical",
         "shortlist",
         "duplicate",
         "mention",
         "fillable",
+        "fillable_near",
         "patch",
         "provenance",
         "grounded",
