@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v0.6.0 (2026-10-10)
+
+### Features
+
+- **corpus**: A value object is not a class to plan an entity for
+  ([`98efba8`](https://github.com/OO-LD/oold-llm-bench/commit/98efba843767d1386c0b63de95f4cb585e2ef66c))
+
+- **playground**: A toggle for the object slots the condition offers
+  ([`9004478`](https://github.com/OO-LD/oold-llm-bench/commit/9004478b33f6e892ddc595eb31e94d76bcc81d8b))
+
+
 ## v0.5.0 (2026-10-10)
 
 ### Features
