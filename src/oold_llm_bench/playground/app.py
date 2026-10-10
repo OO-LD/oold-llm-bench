@@ -203,6 +203,11 @@ class Playground:
             value=True,
             css_classes=["pg-auto-merge-exact-match"],
         )
+        self.embed_nested_toggle = pn.widgets.Checkbox(
+            name="Offer object slots",
+            value=False,
+            css_classes=["pg-embed-nested"],
+        )
 
         self.corpus_choice = pn.widgets.Select(
             name="Corpus", options=list(CORPORA), value=CORPORA[0], css_classes=["pg-corpus"]
@@ -257,6 +262,7 @@ class Playground:
             self.client_choice,
             self.judge_choice,
             self.auto_merge_toggle,
+            self.embed_nested_toggle,
         ):
             control.param.watch(lambda event: self._publish_condition(), "value")
 
@@ -293,6 +299,7 @@ class Playground:
             catalogue_set=self.chosen_sets(),
             shortlist_k=int(self.shortlist_k.value or 1),
             judge_model=None if judge == NO_JUDGE else judge,
+            embed_nested=bool(self.embed_nested_toggle.value),
         )
 
     def effective_options(self, task: TaskRecord | None = None) -> Options:
@@ -712,6 +719,7 @@ class Playground:
             self.judge_choice,
             self.show_classes,
             self.auto_merge_toggle,
+            self.embed_nested_toggle,
             self.condition_pane,
             pn.layout.Divider(),
             pn.pane.Markdown("### Document"),

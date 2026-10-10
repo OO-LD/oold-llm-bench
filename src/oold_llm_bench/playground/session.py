@@ -121,6 +121,14 @@ class Options:
     """Off, because schema.org declares no unit enumeration. A quantity task
     turns it on, and the condition refuses it where there is nothing to pin."""
     unit_match: str = "exact"
+    embed_nested: bool = False
+    """Whether an object-valued property is offered as an object to fill.
+
+    Off, as the condition is off: a `Person` has nowhere to put a
+    `PostalAddress`, so a plan that finds one produces an entity nothing
+    reaches. On, the picture should show the address inside the person who
+    lives there rather than beside them, which is the one thing this toggle
+    is for looking at."""
     attempts: int = 1
 
     def condition(self) -> Condition:
@@ -135,6 +143,7 @@ class Options:
             describe_catalogue=self.describe_catalogue,
             pin_units=self.pin_units,
             unit_match=self.unit_match,
+            embed_nested=self.embed_nested,
             output_form="prose" if self.arm == "no-catalog-not-enforced-prose" else "json",
         )
 
