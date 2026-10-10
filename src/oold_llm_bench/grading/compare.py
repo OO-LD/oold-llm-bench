@@ -326,6 +326,88 @@ def same_unit(expected: Scalar, produced: Scalar, *, unit_match: UnitMatch = Uni
     )
 
 
+_ISO_DURATION = re.compile(
+    r"(?i)^P(?!$)(?:(\d+(?:\.\d+)?)Y)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)W)?(?:(\d+(?:\.\d+)?)D)?"
+    r"(?:T(?!$)(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$"
+)
+"""ISO 8601, the form markup stores a duration in."""
+
+_WRITTEN_DURATION = re.compile(
+    r"(?i)(\d+(?:[.,]\d+)?)\s*(years?|yrs?|months?|weeks?|wks?|days?|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b"
+)
+"""A duration as a page writes it for a reader, which is never ISO 8601.
+
+Measured over the Web Data Commons corpus: of 324 expected ``prepTime``,
+``cookTime`` and ``totalTime`` values, 0 appear in the page verbatim. The
+markup says ``PT5M`` and the page says "5 minutes", so comparing them as text
+scores every one of them wrong whatever the model answered.
+"""
+
+_SECONDS = {
+    "y": 31_536_000.0,
+    "mo": 2_592_000.0,
+    "w": 604_800.0,
+    "d": 86_400.0,
+    "h": 3600.0,
+    "mi": 60.0,
+    "s": 1.0,
+}
+"""Seconds per unit, with a year 365 days and a month 30.
+
+Both are conventions and neither is right for every calendar. They are here
+because a duration property states an interval and not a span between two
+dates: a recipe's ``PT1H`` is an hour wherever it is cooked. A value whose
+answer turns on which convention was used is a value this should not be
+deciding, and no corpus here states one.
+"""
+
+_WRITTEN_UNITS = {
+    "year": "y", "yr": "y", "month": "mo", "week": "w", "wk": "w", "day": "d",
+    "hour": "h", "hr": "h", "h": "h", "minute": "mi", "min": "mi", "m": "mi",
+    "second": "s", "sec": "s", "s": "s",
+}  # fmt: skip
+
+
+def _as_duration(value: Scalar) -> float | None:
+    """One duration in seconds, written either way, or ``None``.
+
+    ``None`` where the text is not a duration at all, so a caller can fall
+    through to comparing it as text. A bare number is not one either: "5" is a
+    count until something says what of.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    iso = _ISO_DURATION.match(text)
+    if iso:
+        years, months, weeks, days, hours, minutes, seconds = (float(part or 0) for part in iso.groups())
+        return (
+            years * _SECONDS["y"]
+            + months * _SECONDS["mo"]
+            + weeks * _SECONDS["w"]
+            + days * _SECONDS["d"]
+            + hours * _SECONDS["h"]
+            + minutes * _SECONDS["mi"]
+            + seconds * _SECONDS["s"]
+        )
+    found = _WRITTEN_DURATION.findall(text)
+    if not found:
+        return None
+    # The whole text has to be duration parts. "1 hour 30 minutes" is a
+    # duration; "ready in 5 minutes, serves 4" is prose that holds one, and
+    # reading it as a duration would match it against any answer stating five
+    # minutes of anything.
+    if re.search(r"[A-Za-z0-9]", _WRITTEN_DURATION.sub(" ", text).replace("and", " ")):
+        return None
+    total = 0.0
+    for amount, unit in found:
+        key = _WRITTEN_UNITS.get(unit.lower()) or _WRITTEN_UNITS.get(unit.lower().rstrip("s"))
+        if key is None:
+            return None
+        total += float(amount.replace(",", ".")) * _SECONDS[key]
+    return total
+
+
 def same_value(
     expected: Scalar,
     produced: Scalar,
@@ -349,6 +431,11 @@ def same_value(
     produced_number = _as_number(produced)
     if expected_number is not None and produced_number is not None:
         return same_number(expected_number, produced_number)
+
+    expected_span = _as_duration(expected)
+    produced_span = _as_duration(produced)
+    if expected_span is not None and produced_span is not None:
+        return expected_span == produced_span
 
     left = normalise_text(expected)
     right = normalise_text(produced)

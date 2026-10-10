@@ -858,3 +858,46 @@ class TestScoreArithmetic:
     def test_an_empty_score_is_zero_not_undefined(self):
         empty = Score()
         assert (empty.precision, empty.recall, empty.f1) == (0.0, 0.0, 0.0)
+
+
+class TestADurationIsComparedAsAnInterval:
+    """Markup stores a duration in ISO 8601 and a page writes it for a reader.
+
+    Measured over the Web Data Commons corpus: of 324 expected ``prepTime``,
+    ``cookTime`` and ``totalTime`` values, none appear in the page verbatim.
+    Compared as text, every one of them is wrong whatever the model answered,
+    so the dimension reported the two notations and not the extraction.
+    """
+
+    def test_the_two_notations_for_one_interval_agree(self):
+        from oold_llm_bench.grading.compare import same_value
+
+        assert same_value("PT5M", "5 minutes")
+        assert same_value("PT1H30M", "1 hour 30 minutes")
+        assert same_value("PT1H30M", "90 minutes")
+        assert same_value("P1D", "24 hours")
+
+    def test_a_different_interval_still_fails(self):
+        from oold_llm_bench.grading.compare import same_value
+
+        assert not same_value("PT5M", "10 minutes")
+        assert not same_value("PT1H", "1 minute")
+
+    def test_prose_that_merely_holds_a_duration_is_not_one(self):
+        """Otherwise it matches any answer stating five minutes of anything."""
+        from oold_llm_bench.grading.compare import same_value
+
+        assert not same_value("PT5M", "ready in 5 minutes, serves 4")
+
+    def test_a_bare_number_is_a_count_until_something_says_what_of(self):
+        from oold_llm_bench.grading.compare import _as_duration
+
+        assert _as_duration("5") is None
+        assert _as_duration("hello") is None
+        assert _as_duration("") is None
+
+    def test_text_that_is_not_a_duration_compares_as_text(self):
+        from oold_llm_bench.grading.compare import same_value
+
+        assert same_value("Breakfast", "Breakfast")
+        assert not same_value("Breakfast", "Dinner")

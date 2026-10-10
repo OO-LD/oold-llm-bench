@@ -1573,11 +1573,12 @@ class TestTheWrittenSeamCloses:
         """What the mode buys, as a score, and where the grader is lenient.
 
         Every value is what the document says, which is what an arm that reads
-        without normalising produces. The enumeration member passes because it
-        was never respelled, and the integer passes because
+        without normalising produces. Three of the four pass: the enumeration
+        member because it was never respelled, the integer because
         :func:`~oold_llm_bench.grading.compare.same_value` strips digit
-        separators before comparing numbers. The boolean and the duration do
-        not, and those are the slots the mode is measuring.
+        separators before comparing numbers, and the duration because the same
+        function reads both notations as the interval they state. The boolean
+        does not, and that is the slot the mode is still measuring here.
         """
         task = generate_task(CLASSES, task_id="t", seed=17, n_slots=4, notation=Notation.WRITTEN)
         slots = {slot.name: slot for slot in EVENT.slots}
@@ -1589,7 +1590,7 @@ class TestTheWrittenSeamCloses:
             classes={"e1": task.expected[0].class_path},
             provenance={},
         )
-        assert score_task(task, copied).primary == pytest.approx(0.5)
+        assert score_task(task, copied).primary == pytest.approx(0.75)
 
 
 def _copied_off_the_page(task, notation):
@@ -1650,9 +1651,9 @@ class TestWhatCopyingThePageIsWorth:
         ("labelling", "n_slots", "notation", "mean", "perfect"),
         [
             (Labelling.NAMED, 4, Notation.CANONICAL, 0.9333, 88),
-            (Labelling.NAMED, 4, Notation.WRITTEN, 0.6604, 10),
+            (Labelling.NAMED, 4, Notation.WRITTEN, 0.7458, 10),
             (Labelling.IMPLIED, 3, Notation.CANONICAL, 0.9056, 86),
-            (Labelling.IMPLIED, 3, Notation.WRITTEN, 0.5472, 0),
+            (Labelling.IMPLIED, 3, Notation.WRITTEN, 0.6500, 1),
         ],
     )
     def test_transcription_stops_being_enough(self, labelling, n_slots, notation, mean, perfect):
@@ -1661,14 +1662,17 @@ class TestWhatCopyingThePageIsWorth:
         assert sum(score == 1.0 for score in scores) == perfect
 
     def test_the_kinds_a_transcriber_still_gets_right_are_the_ones_left_canonical(self):
-        """Two exceptions, and both are worth naming.
+        """Three exceptions, and each is worth naming.
 
         An enumeration member is copied correctly because nothing respells it,
         which is the out-of-scope decision showing up as a number. An integer
         and a number are copied correctly although they are respelled, because
-        the grader strips digit separators before comparing. Five of the seven
-        respelled kinds are normalisation the score depends on; those two are
-        surface variation and nothing more.
+        the grader strips digit separators before comparing. A duration is
+        copied correctly because the grader reads both notations as the
+        interval they state, so "90 minutes" and ``PT1H30M`` are one answer.
+
+        The rest of the respelled kinds are normalisation the score depends
+        on; these are surface variation and nothing more.
         """
         passes = set()
         for seed in range(120):
@@ -1683,7 +1687,7 @@ class TestWhatCopyingThePageIsWorth:
             for slot, value in _answered(task.expected[0], task.variant):
                 if same_value(value, written_value(slot.kind, value)):
                     passes.add(slot.kind)
-        assert passes == {Kind.TEXT, Kind.EMAIL, Kind.ENUM, Kind.INTEGER, Kind.NUMBER}
+        assert passes == {Kind.TEXT, Kind.EMAIL, Kind.ENUM, Kind.INTEGER, Kind.NUMBER, Kind.DURATION}
 
 
 def _linked(seed, n_entities=2, classes=None, **overrides):
