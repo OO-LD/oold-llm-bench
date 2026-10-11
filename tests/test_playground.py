@@ -1682,36 +1682,51 @@ class TestTheCatalogueTheEmbeddingConditionOffers:
 
     VALUE_OBJECTS = (
         "ContactPoint",
+        "DefinedRegion",
+        "DeliveryChargeSpecification",
         "Distance",
         "Energy",
+        "EngineSpecification",
         "GeoCoordinates",
         "GeoShape",
         "InteractionCounter",
+        "LocationFeatureSpecification",
         "Mass",
         "MonetaryAmount",
+        "MonetaryAmountDistribution",
+        "NutritionInformation",
         "Observation",
+        "OfferShippingDetails",
         "OpeningHoursSpecification",
         "PostalAddress",
+        "PostalCodeRangeSpecification",
         "PriceSpecification",
         "PropertyValue",
         "QuantitativeValue",
+        "RepaymentSpecification",
+        "ServicePeriod",
+        "ShippingConditions",
+        "ShippingDeliveryTime",
         "ShippingRateSettings",
+        "ShippingService",
+        "StructuredValue",
         "TypeAndQuantityNode",
         "UnitPriceSpecification",
+        "WarrantyPromise",
     )
     """What the current collection says, so a regeneration that moves it says so."""
 
     def task(self):
         return schemaorg_tasks(load_schemaorg(), count=1, seed=1)[0]
 
-    def test_the_collection_names_seventeen_of_its_describable_classes(self):
+    def test_the_collection_names_the_classes_it_only_ever_embeds(self):
         corpus = load_schemaorg()
-        assert len(corpus.describable) == 108
+        assert len(corpus.describable) == 906
         assert value_object_classes(corpus.classes, corpus.describable) == self.VALUE_OBJECTS
 
     def test_a_class_neither_embedded_nor_pointed_at_is_none_of_them(self):
-        """Thirty-five of the 108 are in that bucket, and nothing offers them
-        as an object, so a rule keeping link targets alone would lose them."""
+        """Nothing offers these as an object, so a rule keeping link targets
+        alone would lose them."""
         derived = set(value_object_classes(load_schemaorg().classes))
         assert not derived & {"Article", "Book", "Flight", "JobPosting"}
 

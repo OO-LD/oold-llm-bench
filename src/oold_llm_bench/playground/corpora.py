@@ -90,16 +90,18 @@ to draw, and the two would drift apart silently if this were repeated as a
 literal at both call sites.
 """
 
-MIN_OWN_SLOTS = 3
-"""How many properties of its own a class needs to be worth describing.
+MIN_OWN_SLOTS = 0
+"""How many properties of its own a class needs to be offered.
 
-The same threshold the fine-tuning pipeline uses, so the classes here are the
-classes there and a playground run is comparable to a grid cell.
+None. A class declaring nothing of its own still has its own description, and
+may narrow an inherited property's description or range, which is a difference
+the answer turns on. It is also what lets a link be pinned at all: `ItemList`
+and `HowToSupply` declare nothing and are what `recipeIngredient` and `supply`
+range over, so a filter on declared slots leaves those links pointing at
+classes no plan can contain.
 
-It is the floor for the pool and not for a draw. A caller asking for more
-slots than a class declares has to narrow the pool itself, which is what
-:func:`_deep_enough` does: ``Thing`` declares exactly three and a four-slot
-draw that reached it raised rather than drawing a different class.
+Generation is the one caller that needs more, and it narrows for itself: see
+:func:`_deep_enough`.
 """
 
 

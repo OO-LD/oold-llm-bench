@@ -929,12 +929,25 @@ def _effective(
     return tuple(merged)
 
 
-def describable_classes(classes: list[SchemaClass], min_own_slots: int = 3) -> list[SchemaClass]:
-    """The classes a document can be built from without falling back on Thing.
+def describable_classes(classes: list[SchemaClass], min_own_slots: int = 0) -> list[SchemaClass]:
+    """The classes a catalogue offers and a schema is enforced over.
 
-    A class with fewer declared slots than a task needs would be padded out
-    with inherited ones, and a document padded that way describes Thing rather
-    than the class it claims to, so nothing in it points at the answer.
+    Every class by default. A class that declares no property of its own is
+    still a better answer than its parent: it carries its own description, and
+    where it narrows an inherited property's description or range that is a
+    difference the answer turns on. Withholding it asks the model to choose
+    between classes while hiding the specific one.
+
+    It is also the only way the schema can express what some properties range
+    over. ``Recipe.recipeIngredient`` ranges over ``ItemList`` and
+    ``HowTo.supply`` over ``HowToSupply``; both declare nothing of their own,
+    so a filter on declared slots removes the targets and leaves a link that
+    can never be pinned to anything.
+
+    ``min_own_slots`` is kept for a caller that wants the narrower pool, and
+    the draw is not that caller: a document has to be built from a class that
+    declares enough to distinguish it from its parent, and the draw narrows to
+    those itself rather than having the whole catalogue narrowed for it.
     """
     return [cls for cls in classes if len(cls.own_slots) >= min_own_slots]
 
@@ -2477,15 +2490,31 @@ def slot_schema(slot: Slot, variant: Variant) -> dict[str, Any]:
     return {"type": "array", "items": one}
 
 
-def link_schema() -> dict[str, Any]:
+def link_schema(link: Link | None = None) -> dict[str, Any]:
     """One node-valued property as JSON Schema.
 
-    An object and nothing more. The extractor reads a nested object as an
-    edge to the entity inside it, which is the shape that has to be reachable;
-    restating the target's own properties here would repeat the branch the
-    catalogue already carries for that class.
+    The id of the entity it points at, as a string, with the classes it may
+    point at named on the slot. An id is what a link is written as everywhere
+    else here: the plan hands ids out, `_pin_references` narrows this slot to
+    the planned ids whose class fits, and the extractor resolves the value
+    back to the entity that claimed it.
+
+    Never a bare object. That shape accepts anything and says nothing: no
+    title, no description, no properties, no range. Offered one, a model has
+    no correct answer available, and both readings of that were measured on
+    one recipe page, qwen3.5-9b writing `{}` into every such slot and
+    claude-haiku-4-5 writing a bare local key into them.
+
+    The range is carried on the slot as well as in the catalogue text, because
+    a slot a plan could not pin stays as it is written here, and then this is
+    the only place the model is told what belongs in it.
     """
-    return {"type": "object"}
+    item: dict[str, Any] = {"type": "string", "format": "iri-reference"}
+    if link is not None:
+        item["description"] = link.description or f"The id of the {' or '.join(link.ranges)} this points at."
+        if link.ranges:
+            item["x-oold-range"] = list(link.ranges)
+    return {"type": "array", "items": item}
 
 
 def nested_schema(
@@ -2644,7 +2673,7 @@ def branches_for(
         class_identifier(cls.name, variant): {
             property_identifier(slot.name, variant): slot_schema(slot, variant) for slot in cls.slots[:max_slots]
         }
-        | ({property_identifier(link.name, variant): link_schema() for link in cls.own_links} if with_links else {})
+        | ({property_identifier(link.name, variant): link_schema(link) for link in cls.own_links} if with_links else {})
         | embedded.get(class_identifier(cls.name, variant), {})
         for cls in classes
     }
@@ -2687,7 +2716,7 @@ def answer_schema(
             properties.setdefault(property_identifier(slot.name, variant), slot_schema(slot, variant))
         if with_links:
             for link in cls.own_links:
-                properties.setdefault(property_identifier(link.name, variant), link_schema())
+                properties.setdefault(property_identifier(link.name, variant), link_schema(link))
         if embed_nested:
             for item in cls.own_nested:
                 properties.setdefault(
