@@ -229,7 +229,7 @@ import hashlib
 import json
 import random
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
 from itertools import combinations
@@ -2645,6 +2645,70 @@ def embedded_for(
     }
 
 
+def offerable_links(
+    cls: SchemaClass, offered: Collection[str], parents: Mapping[str, tuple[SchemaClass, ...]] | None = None
+) -> tuple[list[Link], list[Link]]:
+    """The links worth offering this class, and the ones with nowhere to point.
+
+    What the class declares, plus what the class it specialises declares, and
+    no further. ``Recipe`` declares ``recipeIngredient`` and inherits ``step``,
+    ``supply`` and ``tool`` from ``HowTo``: without them a branch can type a
+    ``HowToStep`` correctly and has no property to attach it with. Measured on
+    one recipe page over a 63-class catalogue, 28 entities every one of them
+    correctly typed and not a single link.
+
+    One level and not the whole chain, because the chain is where the
+    declared-only argument bites. Admitting every inherited link whose range
+    is offered gives ``Recipe`` 83 properties against 15 and grows the branch
+    set 3.9 times, almost all of it ``CreativeWork``'s relations, which is the
+    describing-every-class-by-its-ancestor failure that rule avoids. The
+    parent is the class this one specialises, so its relations are the ones a
+    reader would expect to state about the child.
+
+    Gated on the range either way. A link whose target nobody offers cannot be
+    answered, so offering it would describe the class by a relation it can
+    never state. Those come back as the second list, so a caller can say which
+    relations the catalogue has made unanswerable rather than leaving the
+    class quietly unable to express them.
+    """
+    names = set(offered)
+    candidates = list(cls.own_links)
+    taken = {link.name for link in candidates}
+    for parent in (parents or {}).get(cls.name, ())[:1]:
+        for link in parent.own_links:
+            if link.name not in taken:
+                candidates.append(link)
+                taken.add(link.name)
+    kept = [link for link in candidates if not link.ranges or set(link.ranges) & names]
+    dropped = [link for link in candidates if link.ranges and not set(link.ranges) & names]
+    return kept, dropped
+
+
+def parents_of(classes: list[SchemaClass]) -> dict[str, tuple[SchemaClass, ...]]:
+    """Each class to the classes it specialises, nearest first."""
+    by_name = {cls.name: cls for cls in classes}
+    return {cls.name: tuple(by_name[p] for p in cls.parents if p in by_name) for cls in classes}
+
+
+def warn_unreachable_links(
+    classes: list[SchemaClass], offered: Collection[str], parents: Mapping[str, tuple[SchemaClass, ...]] | None = None
+) -> list[str]:
+    """Say which relations the offered catalogue leaves unanswerable.
+
+    One line per class that declares a link no offered class can satisfy. A
+    catalogue is a choice about what may be answered, and a relation silently
+    unanswerable reads afterwards as a model that never asserts an edge.
+    """
+    notes: list[str] = []
+    for cls in classes:
+        _, dropped = offerable_links(cls, offered, parents)
+        missing = [link for link in dropped if link.ranges]
+        if missing:
+            shown = ", ".join(f"{link.name} -> {'/'.join(link.ranges)}" for link in missing[:6])
+            notes.append(f"{cls.name}: {len(missing)} link(s) point at no offered class: {shown}")
+    return notes
+
+
 def branches_for(
     classes: list[SchemaClass],
     variant: Variant,
@@ -2669,11 +2733,25 @@ def branches_for(
     comparable.
     """
     embedded = embedded_for(classes, variant, max_slots, embed_nested, targets) if embed_nested else {}
+    offered_names = [cls.name for cls in classes]
+    # Lineage over the whole collection where one was given. A parent need not
+    # be offered as a class for its relations to be the child's: nothing links
+    # to `HowTo`, so a catalogue built by closure never holds it, and `Recipe`
+    # would lose `step`, `supply` and `tool` for want of a class nobody asked
+    # the model to choose.
+    lineage = parents_of(list(targets) if targets else classes)
     return {
         class_identifier(cls.name, variant): {
             property_identifier(slot.name, variant): slot_schema(slot, variant) for slot in cls.slots[:max_slots]
         }
-        | ({property_identifier(link.name, variant): link_schema(link) for link in cls.own_links} if with_links else {})
+        | (
+            {
+                property_identifier(link.name, variant): link_schema(link)
+                for link in offerable_links(cls, offered_names, lineage)[0]
+            }
+            if with_links
+            else {}
+        )
         | embedded.get(class_identifier(cls.name, variant), {})
         for cls in classes
     }

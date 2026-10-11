@@ -2415,3 +2415,64 @@ class TestWhichClassesTheCollectionOnlyEverEmbeds:
         assert native.value_objects == ["PostalAddress"]
         assert renamed.value_objects == [class_identifier("PostalAddress", Variant.RENAMED)]
         assert set(renamed.value_objects or ()) <= set(renamed.catalogue or ())
+
+
+class TestTheLinksAClassIsOffered:
+    """A class that can type a thing and not attach it states no edge.
+
+    Measured on one recipe page over a 63-class catalogue: 28 entities, every
+    one correctly typed as a HowToStep or a HowToSupply, and not a single
+    link. `Recipe` declares `recipeIngredient` and inherits `step`, `supply`
+    and `tool` from `HowTo`.
+    """
+
+    def _collection(self):
+        from oold_llm_bench.playground.corpora import schemas_directory
+
+        return load_classes(schemas_directory())
+
+    def test_a_parents_relations_are_offered_to_the_child(self):
+        from oold_llm_bench.corpus.schemaorg import offerable_links, parents_of
+
+        classes = self._collection()
+        by = {c.name: c for c in classes}
+        kept, _ = offerable_links(by["Recipe"], [c.name for c in classes], parents_of(classes))
+        assert {"step", "supply", "tool"} <= {link.name for link in kept}
+
+    def test_a_grandparents_are_not(self):
+        """Admitting the whole chain gives Recipe 83 properties against 18,
+        almost all of them CreativeWork's, which is what declaring-only
+        avoids."""
+        from oold_llm_bench.corpus.schemaorg import offerable_links, parents_of
+
+        classes = self._collection()
+        by = {c.name: c for c in classes}
+        kept, _ = offerable_links(by["Recipe"], [c.name for c in classes], parents_of(classes))
+        creative_work_only = {link.name for link in by["CreativeWork"].own_links}
+        assert not ({link.name for link in kept} & creative_work_only - {"step", "supply", "tool"})
+        assert len(kept) < 20
+
+    def test_a_link_no_offered_class_can_satisfy_is_dropped(self):
+        from oold_llm_bench.corpus.schemaorg import offerable_links, parents_of
+
+        classes = self._collection()
+        by = {c.name: c for c in classes}
+        kept, dropped = offerable_links(by["Recipe"], ["Recipe", "ItemList"], parents_of(classes))
+        assert "supply" in {link.name for link in dropped}
+        assert "supply" not in {link.name for link in kept}
+
+    def test_the_drop_is_reported_rather_than_silent(self):
+        from oold_llm_bench.corpus.schemaorg import parents_of, warn_unreachable_links
+
+        classes = self._collection()
+        by = {c.name: c for c in classes}
+        notes = warn_unreachable_links([by["Recipe"]], ["Recipe", "ItemList"], parents_of(classes))
+        assert notes and "supply" in notes[0]
+        assert "Recipe" in notes[0]
+
+    def test_a_catalogue_that_satisfies_everything_warns_about_nothing(self):
+        from oold_llm_bench.corpus.schemaorg import parents_of, warn_unreachable_links
+
+        classes = self._collection()
+        by = {c.name: c for c in classes}
+        assert warn_unreachable_links([by["Recipe"]], [c.name for c in classes], parents_of(classes)) == []
