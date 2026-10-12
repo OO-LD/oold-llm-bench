@@ -224,6 +224,18 @@ def test_the_embedding_is_in_the_key_and_in_the_label():
     assert label_of(arm, on) != label_of(arm, off)
 
 
+def test_the_reading_rule_is_in_the_key():
+    """Two corpora read from one schema collection under two rules ask the
+    model two different questions, so they are two rows."""
+    from oold_llm_bench.report.table import _condition_key
+    from oold_llm_bench.runner import Condition
+
+    arm = "catalog-enforced"
+    on = Condition(arm=arm, signal="named", strict_readings=True).describe()
+    off = Condition(arm=arm, signal="named").describe()
+    assert _condition_key(on, on) != _condition_key(off, off)
+
+
 def test_every_arm_the_library_defines_has_a_published_name():
     """An arm whose name does not parse has no place in a result table.
 

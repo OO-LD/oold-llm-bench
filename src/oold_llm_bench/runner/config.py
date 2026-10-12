@@ -138,6 +138,27 @@ class Condition:
     :func:`~oold_llm_bench.runner.adapter.offered_catalogue` resolves which
     one ran and ``catalogue_hash`` records it."""
 
+    strict_readings: bool = False
+    """Whether the corpus read an ambiguous property by the stricter rule.
+
+    A schema.org property can offer a literal, a reference and an embedded
+    object at once, and which of the three the corpus reads it as decides what
+    the answer schema asks for. ``Recipe.recipeIngredient`` is a reference to
+    an ``ItemList`` or an embedded ``PropertyValue``, and read the first way an
+    ingredient has to be answered as an edge to a list nothing on the page
+    names. :func:`~oold_llm_bench.corpus.schemaorg.load_classes` takes the
+    same flag and does the reading.
+
+    Declared and not acted on here, the way ``signal`` and ``vocabulary`` are.
+    The reading is fixed when the task is generated, so the runner has nothing
+    left to decide; what it has is a result to attribute, and two task sets
+    generated under two rules carry the same task ids. Without this the two
+    runs share a ``run_id``, write into one jsonl and collapse into one row,
+    which is what happened to ``pin_units`` and three other axes.
+
+    Off by default, because every result so far was measured against the loose
+    reading."""
+
     @property
     def key(self) -> str:
         """A short label, stable enough to group results by.
@@ -163,6 +184,7 @@ class Condition:
             (self.unit_match == "physical", "physical"),
             (self.output_form != "json", self.output_form),
             (self.embed_nested, "embedded"),
+            (self.strict_readings, "strict-readings"),
             (self.plan_retry, "retry"),
             (bool(self.reasoning), f"think:{self.reasoning}"),
             (bool(self.language), self.language or ""),
@@ -187,6 +209,7 @@ class Condition:
             "pin_units": self.pin_units,
             "output_form": self.output_form,
             "embed_nested": self.embed_nested,
+            "strict_readings": self.strict_readings,
         }
 
     def __post_init__(self) -> None:

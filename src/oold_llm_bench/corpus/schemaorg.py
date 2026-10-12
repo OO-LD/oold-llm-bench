@@ -251,6 +251,7 @@ from oold_llm_bench.tasks.models import (
 __all__ = [
     "BOOLEAN_WORDS",
     "CATALOGUE_SLOTS",
+    "COLLECTION_ROOTS",
     "DECLINED",
     "EXCLUDED_PROPERTIES",
     "FRAME_COUNT",
@@ -496,6 +497,9 @@ class Edge:
 _Property = TypeVar("_Property", Slot, Link, Nested)
 """A slot, a link or a nested object. All three are inherited by one rule."""
 
+_Ranged = TypeVar("_Ranged", Link, Nested)
+"""A link or a nested object. Both name the classes they may reach."""
+
 
 @dataclass(frozen=True)
 class SchemaClass:
@@ -636,6 +640,58 @@ def _enum_choices(raw: dict[str, dict], ref: str) -> tuple[str, ...]:
     return _choices_in(((schema or {}).get("$defs") or {}).get("member") or {})
 
 
+def _literal_slots(
+    name: str,
+    definition: dict,
+    raw: dict[str, dict],
+    datatypes: dict[str, DataType],
+) -> tuple[Slot, ...]:
+    """Every literal a property's range offers, in the order the schema lists them.
+
+    A property whose range is another class is a node reference, and one whose
+    range mixes literals with node targets is projected as a companion key
+    ending in ``_text``. Neither is drawn from. A reference has nothing to
+    write down, and the companion key is an artifact of the projection rather
+    than schema.org vocabulary, so a document built on it would be asking the
+    model about a name schema.org does not have.
+
+    All of them and not the first, because which one a property should be read
+    as is a question only the caller can answer: ``QuantitativeValue.value``
+    offers a ``Boolean``, a ``Number`` and a ``Text`` and the schema's own
+    description says which of the three it means.
+    """
+    if name in EXCLUDED_PROPERTIES or name.endswith("_text"):
+        return ()
+    items = definition.get("items") if definition.get("type") == "array" else definition
+    if not isinstance(items, dict):
+        return ()
+    description = (definition.get("description") or "").strip()
+
+    found: list[Slot] = []
+    for branch in _branches(items):
+        # A property whose range spans several enumerations carries the union
+        # inline instead of referencing one member definition, so the inline
+        # form is checked first or every such property would be lost.
+        inline = _choices_in(branch)
+        if inline:
+            found.append(Slot(name=name, kind=Kind.ENUM, choices=inline, description=description))
+            continue
+        ref = branch.get("$ref")
+        if not isinstance(ref, str):
+            continue
+        if _MEMBER_POINTER in ref:
+            choices = _enum_choices(raw, ref)
+            if choices:
+                found.append(Slot(name=name, kind=Kind.ENUM, choices=choices, description=description))
+            continue
+        if not ref.endswith(_SUFFIX):
+            continue
+        datatype = datatypes.get(ref[: -len(_SUFFIX)])
+        if datatype is not None:
+            found.append(Slot(name=name, kind=_kind_of(datatype), description=description))
+    return tuple(found)
+
+
 def _slot_for(
     name: str,
     definition: dict,
@@ -644,41 +700,12 @@ def _slot_for(
 ) -> Slot | None:
     """One property as a slot, or ``None`` when it holds no literal.
 
-    A property whose range is another class is a node reference, and one whose
-    range mixes literals with node targets is projected as a companion key
-    ending in ``_text``. Neither is drawn from. A reference has nothing to
-    write down, and the companion key is an artifact of the projection rather
-    than schema.org vocabulary, so a document built on it would be asking the
-    model about a name schema.org does not have.
+    The first literal its range offers. A range that offers several is read as
+    the one the schema lists first, which is what every result so far was
+    measured against; :func:`_preferred_slot` is the stricter reading.
     """
-    if name in EXCLUDED_PROPERTIES or name.endswith("_text"):
-        return None
-    items = definition.get("items") if definition.get("type") == "array" else definition
-    if not isinstance(items, dict):
-        return None
-    description = (definition.get("description") or "").strip()
-
-    for branch in _branches(items):
-        # A property whose range spans several enumerations carries the union
-        # inline instead of referencing one member definition, so the inline
-        # form is checked first or every such property would be lost.
-        inline = _choices_in(branch)
-        if inline:
-            return Slot(name=name, kind=Kind.ENUM, choices=inline, description=description)
-        ref = branch.get("$ref")
-        if not isinstance(ref, str):
-            continue
-        if _MEMBER_POINTER in ref:
-            choices = _enum_choices(raw, ref)
-            if choices:
-                return Slot(name=name, kind=Kind.ENUM, choices=choices, description=description)
-            continue
-        if not ref.endswith(_SUFFIX):
-            continue
-        datatype = datatypes.get(ref[: -len(_SUFFIX)])
-        if datatype is not None:
-            return Slot(name=name, kind=_kind_of(datatype), description=description)
-    return None
+    offered = _literal_slots(name, definition, raw, datatypes)
+    return offered[0] if offered else None
 
 
 def _branches(items: dict) -> list[dict]:
@@ -853,7 +880,168 @@ def _declared_nested(schema: dict, raw: dict[str, dict], datatypes: dict[str, Da
     return tuple(found)
 
 
-def load_classes(directory: Path) -> list[SchemaClass]:
+COLLECTION_ROOTS = ("ItemList", "ListItem")
+"""The classes whose descendants hold members rather than describe a thing.
+
+Two names and not a list of collections, because the list is the hierarchy's
+to produce: every collection schema.org has is a subclass of one of these, and
+naming ``BreadcrumbList``, ``OfferCatalog``, ``HowToStep`` and the rest here
+would be a list that goes stale the next time the vocabulary grows. Over the
+pinned collection the closure is 11 classes.
+
+They are roots and not a derived property because nothing else in the
+projection separates a collection from a thing. The generated schemas annotate
+a mixed range with ``[value-type]`` and ``[entity]`` and call ``ItemList`` an
+entity, which is true and not the distinction wanted: an ingredient is an
+entity too, and the question is whether the property's target is the
+ingredient or the list the ingredient sits in.
+"""
+
+_RECOMMENDED_TYPE = re.compile(r"recommended type[^.]*?'([A-Za-z]+)'")
+"""Where schema.org states which of several literals a property means.
+
+``QuantitativeValue.value`` offers a ``Boolean``, a ``Number`` and a ``Text``
+and its description says "the recommended type for values is 'Number'". That
+sentence is the vocabulary's own answer to the question the range leaves open,
+so it is read rather than guessed at.
+"""
+
+
+def _descendants_of(roots: Collection[str], parents: Mapping[str, tuple[str, ...]]) -> frozenset[str]:
+    """The named classes and everything that inherits from them."""
+    children: dict[str, list[str]] = {}
+    for name, above in parents.items():
+        for parent in above:
+            children.setdefault(parent, []).append(name)
+    found: set[str] = set()
+    queue = [name for name in roots if name in parents]
+    while queue:
+        current = queue.pop()
+        if current in found:
+            continue
+        found.add(current)
+        queue.extend(children.get(current, ()))
+    return frozenset(found)
+
+
+def _ancestry(name: str, parents: Mapping[str, tuple[str, ...]]) -> set[str]:
+    """Every class this one inherits from, however many parents it has."""
+    found: set[str] = set()
+    queue = list(parents.get(name, ()))
+    while queue:
+        current = queue.pop()
+        if current in found or current not in parents:
+            continue
+        found.add(current)
+        queue.extend(parents.get(current, ()))
+    return found
+
+
+def _reachable(item: _Ranged, ruled_out: Collection[str]) -> _Ranged | None:
+    """The same property without the targets a gate ruled out, or nothing left."""
+    kept = tuple(target for target in item.ranges if target not in ruled_out)
+    return replace(item, ranges=kept) if kept else None
+
+
+def _preferred_slot(offered: tuple[Slot, ...], datatypes: dict[str, DataType]) -> Slot:
+    """Which of several surviving literals a property is read as.
+
+    The one the description recommends, where schema.org states a
+    recommendation and the range offers it. Otherwise the narrowest numeric
+    branch, because a range listing a ``Number`` beside a ``Text`` is saying
+    the property carries a quantity that may also be written out, and reading
+    it as text makes every magnitude in the corpus a string. Otherwise the
+    first, which is what the loose rule answers and leaves the reading where it
+    was.
+    """
+    named = _RECOMMENDED_TYPE.search(offered[0].description)
+    if named is not None:
+        datatype = datatypes.get(named.group(1))
+        if datatype is not None:
+            recommended = next((slot for slot in offered if slot.kind is _kind_of(datatype)), None)
+            if recommended is not None:
+                return recommended
+    for kind in (Kind.INTEGER, Kind.NUMBER):
+        numeric = next((slot for slot in offered if slot.kind is kind), None)
+        if numeric is not None:
+            return numeric
+    return offered[0]
+
+
+def _strict_declarations(
+    schema: dict,
+    raw: dict[str, dict],
+    datatypes: dict[str, DataType],
+    *,
+    collections: frozenset[str],
+    ancestors: frozenset[str],
+) -> tuple[tuple[Slot, ...], tuple[Link, ...], tuple[Nested, ...]]:
+    """The three declared sets at once, under the stricter reading rule.
+
+    One pass and not three, because the stricter rule decides the three
+    together. The loose rule resolves each pair on its own and the three
+    pairwise answers close into a cycle, which :func:`_declared_nested`
+    describes and breaks by hand.
+
+    A property offering one reading keeps it, whatever its targets are.
+    ``HowTo.supply`` points at a ``HowToSupply`` and nothing else, and a gate
+    that fired here would leave the property unreadable rather than better
+    read. So the gates run only where the range offers a choice, which is 206
+    of the collection's 3,101 declarations.
+
+    Where it does offer a choice, two targets are ruled out first. A
+    collection is one: ``Recipe.recipeIngredient`` is a reference to an
+    ``ItemList`` or an embedded ``PropertyValue``, and an ingredient is the
+    property value rather than the list it is a member of. An ancestor of the
+    class declaring the property is the other: ``QuantitativeValue.value``
+    embeds a ``StructuredValue``, which would nest a thing inside its own kind,
+    and over the collection that rules out 7 embedding branches of 377, so it
+    is surgical rather than sweeping.
+
+    What survives is read as a link, else an embedding, else a literal. A
+    reference names an entity the answer states in full somewhere else and an
+    embedding has to carry one in place, so where a range offers both, the
+    reference is the cheaper true answer.
+
+    That last order is where the two rules part company most widely, and it is
+    worth stating in numbers. The loose rule resolves a reference against a
+    literal the other way round, so ``logo`` is read as the ``URL`` it also
+    admits and never as the ``ImageObject``; 57 declarations move from a
+    literal to a reference here, against 7 from an embedding to a reference, 3
+    from an embedding to a literal and 1 the other way. 69 of the 206 are read
+    differently in all.
+    """
+    ruled_out = collections | ancestors
+    slots: list[Slot] = []
+    links: list[Link] = []
+    nested: list[Nested] = []
+    for name, definition in (schema.get("properties") or {}).items():
+        if not isinstance(definition, dict):
+            continue
+        literals = _literal_slots(name, definition, raw, datatypes)
+        link = _link_for(name, definition)
+        embed = _nested_for(name, definition, datatypes)
+        ambiguous = sum((bool(literals), link is not None, embed is not None)) > 1
+        if ambiguous:
+            link = _reachable(link, ruled_out) if link is not None else None
+            embed = _reachable(embed, ruled_out) if embed is not None else None
+        # What survives the gates is read in the order the loose rule already
+        # uses: an embedding, else a literal, else a link. The gates are the
+        # whole of the difference, so a property neither gate touches reads as
+        # it reads today. Reordering link against literal here would move 57
+        # declarations on no evidence: `logo` would become an `ImageObject`
+        # where the `URL` it also admits is what a page carries, and none of
+        # the properties whose right answer is known constrains that pair.
+        if embed is not None:
+            nested.append(embed)
+        elif literals:
+            slots.append(_preferred_slot(literals, datatypes) if ambiguous else literals[0])
+        elif link is not None:
+            links.append(link)
+    return tuple(slots), tuple(links), tuple(nested)
+
+
+def load_classes(directory: Path, *, strict_readings: bool = False) -> list[SchemaClass]:
     """Read the corpus, resolving each class's effective set of slots.
 
     The parent chain is followed for the same reason ``load_kinds`` follows it
@@ -875,6 +1063,14 @@ def load_classes(directory: Path) -> list[SchemaClass]:
     readings are not enough to place the third: with only the first two,
     ``address`` comes out an array of strings and the ``PostalAddress`` it
     also admits comes out nowhere.
+
+    ``strict_readings`` reads a property whose range offers a choice by
+    :func:`_strict_declarations` instead. Off by default, and that is the whole
+    reason it is a parameter: every result so far was measured against the
+    loose reading, and moving it silently would put the numbers taken before it
+    and the numbers taken after it into one population with nothing in the
+    record saying which was which. A run declares it through
+    :attr:`~oold_llm_bench.runner.config.Condition.strict_readings`.
     """
     raw = {}
     for path in sorted(directory.glob("*.schema.json")):
@@ -883,9 +1079,25 @@ def load_classes(directory: Path) -> list[SchemaClass]:
 
     parents = {name: _parents_of(schema) for name, schema in raw.items()}
     datatypes = _resolve_datatypes(raw)
-    slots = {name: _declared_slots(schema, raw, datatypes) for name, schema in raw.items()}
-    links = {name: _declared_links(schema, raw, datatypes) for name, schema in raw.items()}
-    nested = {name: _declared_nested(schema, raw, datatypes) for name, schema in raw.items()}
+    if strict_readings:
+        collections = _descendants_of(COLLECTION_ROOTS, parents)
+        read = {
+            name: _strict_declarations(
+                schema,
+                raw,
+                datatypes,
+                collections=collections,
+                ancestors=frozenset(_ancestry(name, parents)),
+            )
+            for name, schema in raw.items()
+        }
+        slots = {name: declared[0] for name, declared in read.items()}
+        links = {name: declared[1] for name, declared in read.items()}
+        nested = {name: declared[2] for name, declared in read.items()}
+    else:
+        slots = {name: _declared_slots(schema, raw, datatypes) for name, schema in raw.items()}
+        links = {name: _declared_links(schema, raw, datatypes) for name, schema in raw.items()}
+        nested = {name: _declared_nested(schema, raw, datatypes) for name, schema in raw.items()}
 
     return [
         SchemaClass(
@@ -2849,17 +3061,8 @@ def _implied_schema(
 
 
 def _ancestors_of(name: str, classes: list[SchemaClass]) -> set[str]:
-    """Every class this one inherits from, however many parents it has."""
-    by_name = {cls.name: cls for cls in classes}
-    found: set[str] = set()
-    queue = list(by_name[name].parents) if name in by_name else []
-    while queue:
-        current = queue.pop()
-        if current in found or current not in by_name:
-            continue
-        found.add(current)
-        queue.extend(by_name[current].parents)
-    return found
+    """Every class this one inherits from, over a resolved collection."""
+    return _ancestry(name, {cls.name: cls.parents for cls in classes})
 
 
 def _catalogue_in(

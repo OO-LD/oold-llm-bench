@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import os
 import random
+from pathlib import Path
 
 import pytest
 
@@ -2291,6 +2293,102 @@ class TestTheAnswerShapeIsUnchangedWithTheAxisOff:
         assert branches_for(classes, Variant.NATIVE, embed_nested=0) == branches_for(classes, Variant.NATIVE)
 
 
+class TestTheStricterReadingIsOffByDefault:
+    """The same claim for the rule that decides how a property is read.
+
+    Every result taken so far was measured against the loose reading, so the
+    default has to be the loose one down to the bytes. The digests above say
+    what those bytes are; these say that asking for the default and asking for
+    the rule to be off are the same question.
+    """
+
+    def _bytes(self, built) -> bytes:
+        return json.dumps(built, sort_keys=True).encode("utf-8")
+
+    @pytest.mark.parametrize("variant", [Variant.NATIVE, Variant.RENAMED])
+    def test_the_answer_schema_is_byte_identical_with_the_rule_off(self, tmp_path, variant):
+        write_corpus(tmp_path)
+        loose = answer_schema(load_classes(tmp_path), variant)
+        declared = answer_schema(load_classes(tmp_path, strict_readings=False), variant)
+        assert self._bytes(loose) == self._bytes(declared)
+
+    @pytest.mark.parametrize("variant", [Variant.NATIVE, Variant.RENAMED])
+    def test_the_branches_are_byte_identical_with_the_rule_off(self, tmp_path, variant):
+        write_corpus(tmp_path)
+        loose = branches_for(load_classes(tmp_path), variant)
+        declared = branches_for(load_classes(tmp_path, strict_readings=False), variant)
+        assert self._bytes(loose) == self._bytes(declared)
+
+    @pytest.mark.skipif(
+        not (os.environ.get("OOLD_BENCH_SCHEMAS") and Path(os.environ["OOLD_BENCH_SCHEMAS"]).is_dir()),
+        reason="set OOLD_BENCH_SCHEMAS to the generated schema.org module",
+    )
+    def test_the_rule_moves_something_when_it_is_on(self):
+        """Or the pair above would hold for a rule that does nothing at all.
+
+        Read against the collection rather than the fixture, because what the
+        gates catch is a container target and a target that is the holder's
+        own ancestor, and the two properties that demonstrate it are real
+        ones: `recipeIngredient` offers an `ItemList`, `value` offers the
+        `StructuredValue` a `QuantitativeValue` already is.
+        """
+        from oold_llm_bench.playground.corpora import schemas_directory
+
+        loose = {cls.name: cls for cls in load_classes(schemas_directory())}
+        strict = {cls.name: cls for cls in load_classes(schemas_directory(), strict_readings=True)}
+        assert "recipeIngredient" in {link.name for link in loose["Recipe"].own_links}
+        assert "recipeIngredient" in {item.name for item in strict["Recipe"].own_nested}
+        assert "value" in {item.name for item in loose["QuantitativeValue"].own_nested}
+        assert "value" in {slot.name for slot in strict["QuantitativeValue"].own_slots}
+
+
+class TestTheStricterReadingOfAnAmbiguousProperty:
+    """Which of the readings a range offers the property is read as.
+
+    The gates run on a range that offers a choice and nowhere else, so what a
+    property with one reading comes out as is the same under both rules.
+    """
+
+    def _reading(self, corpus, cls, prop):
+        found = corpus[cls]
+        for slot in found.own_slots:
+            if slot.name == prop:
+                return "literal", slot.kind.value
+        for link in found.own_links:
+            if link.name == prop:
+                return "link", link.ranges
+        for item in found.own_nested:
+            if item.name == prop:
+                return "embed", item.ranges
+        return "absent", ()
+
+    @pytest.fixture
+    def strict(self, tmp_path):
+        write_corpus(tmp_path)
+        return {cls.name: cls for cls in load_classes(tmp_path, strict_readings=True)}
+
+    def test_a_literal_beside_a_reference_keeps_the_literal(self, corpus, strict):
+        """`logo` is a URL or a reference to an Organization, and a page
+        carries the URL. Neither gate touches the pair, so the stricter rule
+        reads it as the looser one does: reordering the two would move 57
+        declarations on no evidence."""
+        assert self._reading(corpus, "Residence", "logo") == ("literal", "text")
+        assert self._reading(strict, "Residence", "logo") == ("literal", "text")
+
+    def test_all_three_readings_at_once_come_out_as_the_embedding(self, corpus, strict):
+        """The gates remove a container and an ancestor. What is left is read
+        as the loose rule reads it, and an embedding carries the value in
+        place rather than asking for an entity nobody planned."""
+        assert self._reading(corpus, "Residence", "hasMeasurement") == ("embed", ("QuantitativeValue",))
+        assert self._reading(strict, "Residence", "hasMeasurement") == ("embed", ("QuantitativeValue",))
+
+    def test_a_property_offering_one_reading_keeps_it(self, corpus, strict):
+        """`floorSize` embeds and nothing else, `author` points and nothing
+        else, and neither is a choice for a gate to make."""
+        for cls, prop in (("Residence", "floorSize"), ("Book", "author"), ("Book", "isbn")):
+            assert self._reading(corpus, cls, prop) == self._reading(strict, cls, prop)
+
+
 class TestTheAnswerShapeWithTheAxisOn:
     def test_the_answer_schema_gains_the_object_valued_properties(self, corpus):
         classes = list(corpus.values())
@@ -2476,6 +2574,77 @@ class TestTheLinksAClassIsOffered:
         classes = self._collection()
         by = {c.name: c for c in classes}
         assert warn_unreachable_links([by["Recipe"]], [c.name for c in classes], parents_of(classes)) == []
+
+
+class TestTheStricterReadingAgainstTheCollection:
+    """The four declarations whose right reading is known.
+
+    Each is a property schema.org gives more than one range, where what a
+    document about it actually states settles which range was meant. They are
+    the whole of the evidence the rule was derived from, so they are asserted
+    against the real collection rather than against a fixture that would only
+    restate the rule.
+    """
+
+    def _collection(self, **read):
+        from oold_llm_bench.playground.corpora import schemas_directory
+
+        return {cls.name: cls for cls in load_classes(schemas_directory(), **read)}
+
+    @pytest.fixture
+    def strict(self):
+        return self._collection(strict_readings=True)
+
+    @pytest.fixture
+    def loose(self):
+        return self._collection()
+
+    def test_an_address_is_the_postal_address_it_embeds(self, strict):
+        """A reader taking the text branch has the property down as an array
+        of strings and the address nowhere."""
+        assert [item.ranges for item in strict["Person"].own_nested if item.name == "address"] == [("PostalAddress",)]
+
+    def test_an_ingredient_is_the_property_value_and_not_the_list_it_sits_in(self, loose, strict):
+        """`recipeIngredient` points at an `ItemList` or embeds a
+        `PropertyValue`, and an ingredient is not a list member."""
+        assert [link.ranges for link in loose["Recipe"].own_links if link.name == "recipeIngredient"] == [("ItemList",)]
+        assert [item.ranges for item in strict["Recipe"].own_nested if item.name == "recipeIngredient"] == [
+            ("PropertyValue",)
+        ]
+
+    def test_a_quantitative_values_value_is_the_number_its_description_recommends(self, loose, strict):
+        """Embedding the `StructuredValue` it also admits would nest a thing
+        inside its own kind, and of the three literals left the description
+        names one."""
+        assert [item.ranges for item in loose["QuantitativeValue"].own_nested if item.name == "value"] == [
+            ("StructuredValue",)
+        ]
+        assert [slot.kind for slot in strict["QuantitativeValue"].own_slots if slot.name == "value"] == [Kind.NUMBER]
+
+    def test_a_recipes_nutrition_stays_the_object_it_only_ever_was(self, loose, strict):
+        """One reading offered, so the rule has nothing to decide."""
+        ranges = [item.ranges for item in strict["Recipe"].own_nested if item.name == "nutrition"]
+        assert ranges == [("NutritionInformation",)]
+        assert ranges == [item.ranges for item in loose["Recipe"].own_nested if item.name == "nutrition"]
+
+    def test_a_collection_target_survives_where_it_is_the_only_reading(self, strict):
+        """`supply` points at a `HowToSupply` and nothing else. Dropping the
+        target would leave the property unreadable rather than better read,
+        and `Recipe` was given these relations deliberately."""
+        offered = {link.name: link.ranges for link in strict["HowTo"].own_links}
+        assert offered["supply"] == ("HowToSupply",)
+        assert offered["tool"] == ("HowToTool",)
+
+    def test_the_collections_are_derived_from_the_hierarchy(self):
+        """Two roots and the closure under them, so the list does not go stale
+        the next time the vocabulary grows a collection."""
+        from oold_llm_bench.corpus.schemaorg import COLLECTION_ROOTS, _descendants_of
+
+        classes = self._collection()
+        found = _descendants_of(COLLECTION_ROOTS, {name: cls.parents for name, cls in classes.items()})
+        assert {"ItemList", "ListItem", "BreadcrumbList", "OfferCatalog", "HowToStep"} <= found
+        assert "PropertyValue" not in found
+        assert "NutritionInformation" not in found
 
 
 class TestTheCatalogueEntryDescribesTheSchema:

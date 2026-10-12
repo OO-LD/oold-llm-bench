@@ -276,6 +276,21 @@ def _fidelity_band(value: float) -> str:
     return ">1.0"
 
 
+_FLAG_PARTS = {
+    "pin_units": "units",
+    "describe_catalogue": "described",
+    "embed_nested": "embedded",
+    "strict_readings": "strict-readings",
+    "plan_retry": "retry",
+}
+"""The axes that are on or off, and what the key calls each one when it is on.
+
+``plan_retry`` is here rather than riding on the orchestration. Pooled with
+the plain arm, a gain that belongs to re-asking a failed plan call would read
+as the orchestration's.
+"""
+
+
 def _part_of(name: str, enforcement: dict[str, Any]) -> str | None:
     """One axis as it appears in the key, or ``None`` where it was not varied.
 
@@ -284,26 +299,16 @@ def _part_of(name: str, enforcement: dict[str, Any]) -> str | None:
     axis that reaches :attr:`~oold_llm_bench.runner.config.Condition.key` and
     not this function pools a thinking-off cell with a thinking-on one under a
     name that fits neither.
-
-    ``plan_retry`` gets its own part rather than riding on the orchestration.
-    Pooled with the plain arm, a gain that belongs to re-asking a failed plan
-    call would read as the orchestration's.
     """
     value = enforcement.get(name)
+    if name in _FLAG_PARTS:
+        return _FLAG_PARTS[name] if value else None
     if name in ("signal", "vocabulary"):
         return str(value) if value else None
     if name == "catalogue_size":
         return f"n{value}" if value else None
-    if name == "pin_units":
-        return "units" if value else None
-    if name == "describe_catalogue":
-        return "described" if value else None
-    if name == "embed_nested":
-        return "embedded" if value else None
     if name == "orchestration":
         return f"{value}(k{enforcement.get('shortlist_k')})" if value and value != "single_shot" else None
-    if name == "plan_retry":
-        return "retry" if value else None
     if name == "unit_match":
         return "physical" if value == "physical" else None
     if name == "reasoning":
@@ -318,6 +323,7 @@ _KEY_AXES = (
     "pin_units",
     "describe_catalogue",
     "embed_nested",
+    "strict_readings",
     "orchestration",
     "plan_retry",
     "unit_match",

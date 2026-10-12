@@ -145,6 +145,16 @@ class TestTheGrid:
         assert plain.key != embedded.key
         assert embedded.key.endswith("embedded")
 
+    def test_two_conditions_differing_only_in_the_reading_rule_keep_two_keys(self):
+        """Which reading a corpus gave an ambiguous property decides what the
+        answer schema asks for, and two task sets generated under two rules
+        carry the same task ids, so nothing else separates the runs."""
+        plain = Condition(arm="schema-dump-catalog-flat-enforced")
+        strict = Condition(arm="schema-dump-catalog-flat-enforced", strict_readings=True)
+        assert plain.key != strict.key
+        assert strict.key.endswith("strict-readings")
+        assert strict.describe()["strict_readings"] is True
+
     def test_runs_per_cell_is_fixed_before_running(self):
         """Choosing it after seeing results turns noise into a finding."""
         assert config().describe()["runs_per_cell"] == 2
