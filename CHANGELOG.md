@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.9.0 (2026-10-12)
+
+### Features
+
+- **corpus**: A reading rule that leaves a property one option
+  ([`7742924`](https://github.com/OO-LD/oold-llm-bench/commit/7742924fd53aeec0e1bf489a615b906f49218ed6))
+
+
 ## v0.8.0 (2026-10-12)
 
 ### Bug Fixes
