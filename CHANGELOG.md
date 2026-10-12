@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v0.8.0 (2026-10-12)
+
+### Bug Fixes
+
+- **config**: Silence a model that thinks unless it is told not to
+  ([`fd91d22`](https://github.com/OO-LD/oold-llm-bench/commit/fd91d220c20e0e45a70f1fb00d5fffb34d371a58))
+
+- **corpus**: Describe the class the schema offers, not the one it declares
+  ([`61f2c81`](https://github.com/OO-LD/oold-llm-bench/commit/61f2c81e436c1d98ee472d05b397f1d406262ba1))
+
+### Features
+
+- **corpus**: Offer a class the relations its parent declares
+  ([`8a573b9`](https://github.com/OO-LD/oold-llm-bench/commit/8a573b984c939a05d8d251131d0e3313b681864e))
+
+- **corpus**: Offer every class, and never a slot that says nothing
+  ([`78ab6ec`](https://github.com/OO-LD/oold-llm-bench/commit/78ab6ec956bb782eb2797ac54e6a513102b1558a))
+
+
 ## v0.7.0 (2026-10-10)
 
 ### Features
