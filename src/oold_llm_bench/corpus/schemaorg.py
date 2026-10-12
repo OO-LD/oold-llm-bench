@@ -2210,6 +2210,8 @@ def render_class(
     variant: Variant,
     max_slots: int = CATALOGUE_SLOTS,
     with_links: bool = False,
+    offered: Collection[str] | None = None,
+    parents: Mapping[str, tuple[SchemaClass, ...]] | None = None,
 ) -> str:
     """One catalogue entry, as the prompt can show it.
 
@@ -2222,6 +2224,13 @@ def render_class(
     at. Off by default, because every result measured so far was taken against
     an entry that lists the literal slots alone, and a catalogue that moves
     underneath a run makes the runs incomparable.
+
+    ``offered`` and ``parents`` make the links here the links the schema
+    carries, through :func:`offerable_links`. Listed from ``own_links``
+    instead, the entry omits what the class inherits from the class it
+    specialises: a ``Recipe`` whose branch offers ``step``, ``supply`` and
+    ``tool`` was described to the identify step without them, so the step was
+    told a ``HowToStep`` exists and never that a ``Recipe`` can hold one.
     """
     head = class_identifier(cls.name, variant)
     lines = [f"- {head}"]
@@ -2237,7 +2246,8 @@ def render_class(
             text += ": " + ", ".join(slot.choices[:8])
         lines.append(text)
     if with_links:
-        for link in cls.own_links:
+        links = offerable_links(cls, offered, parents)[0] if offered is not None else list(cls.own_links)
+        for link in links:
             targets = ", ".join(class_identifier(name, variant) for name in link.ranges)
             lines.append(f"  {property_identifier(link.name, variant)} (link: {targets})")
     return "\n".join(lines)
@@ -2944,8 +2954,13 @@ def _task_from(
     described: dict[str, str] | None = None
     if catalogue and describe_catalogue:
         by_identifier = {class_identifier(cls.name, variant): cls for cls in classes}
+        # The same links the branch carries, so the entry describes the class
+        # the schema actually offers rather than the one it declares.
+        ancestors = parents_of(classes)
         described = {
-            identifier: render_class(by_identifier[identifier], variant, with_links=linked)
+            identifier: render_class(
+                by_identifier[identifier], variant, with_links=linked, offered=catalogue, parents=ancestors
+            )
             for identifier in catalogue
             if identifier in by_identifier
         }

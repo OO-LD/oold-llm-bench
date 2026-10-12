@@ -2476,3 +2476,48 @@ class TestTheLinksAClassIsOffered:
         classes = self._collection()
         by = {c.name: c for c in classes}
         assert warn_unreachable_links([by["Recipe"]], [c.name for c in classes], parents_of(classes)) == []
+
+
+class TestTheCatalogueEntryDescribesTheSchema:
+    """What the identify step is shown has to be what the extract step offers.
+
+    `branches_for` was made to offer `Recipe` the links it inherits from
+    `HowTo` while `render_class` still listed the declared ones, so the step
+    was told a `HowToStep` exists as a class and never that a `Recipe` can
+    hold one.
+    """
+
+    def _recipe(self):
+        from oold_llm_bench.playground.corpora import schemas_directory
+
+        classes = load_classes(schemas_directory())
+        return classes, {c.name: c for c in classes}["Recipe"]
+
+    def test_the_entry_lists_the_links_the_branch_carries(self):
+        from oold_llm_bench.corpus.schemaorg import offerable_links, parents_of, render_class
+
+        classes, recipe = self._recipe()
+        names = [c.name for c in classes]
+        entry = render_class(recipe, Variant.NATIVE, with_links=True, offered=names, parents=parents_of(classes))
+        offered = {link.name for link in offerable_links(recipe, names, parents_of(classes))[0]}
+        for name in offered:
+            assert name in entry, name
+
+    def test_a_parents_relation_appears_in_the_entry(self):
+        from oold_llm_bench.corpus.schemaorg import parents_of, render_class
+
+        classes, recipe = self._recipe()
+        entry = render_class(
+            recipe, Variant.NATIVE, with_links=True, offered=[c.name for c in classes], parents=parents_of(classes)
+        )
+        assert "supply (link: HowToSupply)" in entry
+        assert "step (link:" in entry
+
+    def test_an_entry_asked_for_no_catalogue_still_lists_what_it_declares(self):
+        """The old call shape, so a caller that passes neither is unchanged."""
+        from oold_llm_bench.corpus.schemaorg import render_class
+
+        _, recipe = self._recipe()
+        entry = render_class(recipe, Variant.NATIVE, with_links=True)
+        assert "recipeIngredient (link:" in entry
+        assert "supply" not in entry
