@@ -1,42 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/findings/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/findings/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/method/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/method/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/pipelines/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/pipelines/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/pipelines/single_shot/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/pipelines/single_shot/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/pipelines/select_then_fill/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/pipelines/select_then_fill/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/pipelines/segmented/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/pipelines/segmented/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/pipelines/multi_step/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/pipelines/multi_step/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/arms/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/arms/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/corpora/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/corpora/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/results/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/results/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/local-stack/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/local-stack/</loc>
       </url>
       <url>
-        <loc>https://OO-LD.github.io/oold-llm-bench/0.7.0/hf-endpoints/</loc>
+        <loc>https://OO-LD.github.io/oold-llm-bench/0.8.0/hf-endpoints/</loc>
       </url>
 </urlset>
